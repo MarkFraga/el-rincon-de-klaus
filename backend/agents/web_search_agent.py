@@ -6,7 +6,6 @@ from typing import Any
 
 import httpx
 from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
 
 from backend.agents.base_agent import BaseAgent
 
@@ -23,24 +22,51 @@ class WebSearchAgent(BaseAgent):
         super().__init__(name="web_search", job_id=job_id)
 
     async def run(self, topic: str) -> dict:
-        await self.report("Generando consultas de busqueda masiva...", progress=5)
+        await self.report("Iniciando busqueda web...", progress=5)
 
         queries = self._build_queries(topic)
         raw_results: list[dict[str, Any]] = []
 
+        # Reuse a single DDGS instance to avoid rate-limit issues
+        try:
+            from duckduckgo_search import DDGS
+            ddgs = DDGS()
+        except Exception as exc:
+            logger.error("Failed to init DuckDuckGo: %s", exc)
+            await self.report("Error inicializando DuckDuckGo, reintentando...", progress=6)
+            # Retry once
+            await asyncio.sleep(2)
+            try:
+                from duckduckgo_search import DDGS
+                ddgs = DDGS()
+            except Exception:
+                await self.report("DuckDuckGo no disponible, saltando busqueda web.", progress=45)
+                return {"sources": [], "summary": ""}
+
         for idx, query in enumerate(queries):
             pct = 5 + int((idx / len(queries)) * 25)
             await self.report(f"Buscando ({idx+1}/{len(queries)}): {query[:50]}...", progress=pct)
-            try:
-                hits = await asyncio.to_thread(
-                    lambda q=query: DDGS().text(q, max_results=15)
-                )
-                if hits:
-                    raw_results.extend(hits)
-            except Exception as exc:
-                logger.warning("DuckDuckGo query failed (%s): %s", query, exc)
-            await asyncio.sleep(0.5)  # rate limit courtesy
 
+            # Try up to 2 times per query
+            for attempt in range(2):
+                try:
+                    hits = await asyncio.to_thread(ddgs.text, query, max_results=15)
+                    if hits:
+                        raw_results.extend(hits)
+                        logger.info("Web query '%s': %d results", query[:40], len(hits))
+                    break  # success
+                except Exception as exc:
+                    logger.warning("DDG query attempt %d failed (%s): %s", attempt + 1, query[:40], exc)
+                    if attempt == 0:
+                        await asyncio.sleep(2)  # wait before retry
+                    else:
+                        logger.error("DDG query permanently failed: %s", query[:40])
+
+            await asyncio.sleep(0.8)  # rate limit courtesy between queries
+
+        await self.report(f"Encontrados {len(raw_results)} resultados brutos", progress=32)
+
+        # Deduplicate
         seen_urls: set[str] = set()
         unique: list[dict[str, Any]] = []
         for r in raw_results:
@@ -51,10 +77,9 @@ class WebSearchAgent(BaseAgent):
 
         await self.report(f"Extrayendo contenido de {len(unique)} fuentes...", progress=35)
 
-        # Extract in batches of 10 to avoid overwhelming
         sources: list[dict[str, str]] = []
-        for batch_start in range(0, len(unique), 10):
-            batch = unique[batch_start:batch_start + 10]
+        for batch_start in range(0, len(unique), 8):
+            batch = unique[batch_start:batch_start + 8]
             tasks = [self._extract(r) for r in batch]
             extracted = await asyncio.gather(*tasks, return_exceptions=True)
             for item in extracted:
@@ -66,6 +91,7 @@ class WebSearchAgent(BaseAgent):
         )
 
         await self.report(f"Busqueda web completada: {len(sources)} fuentes utiles.", progress=45)
+        logger.info("WebSearchAgent finished: %d sources from %d queries", len(sources), len(queries))
         return {"sources": sources, "summary": summary}
 
     @staticmethod

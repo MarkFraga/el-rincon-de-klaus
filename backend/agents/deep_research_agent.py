@@ -6,7 +6,6 @@ from typing import Any
 
 import httpx
 from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
 
 from backend.agents.base_agent import BaseAgent
 
@@ -23,28 +22,51 @@ class DeepResearchAgent(BaseAgent):
         super().__init__(name="deep_research", job_id=job_id)
 
     async def run(self, topic: str) -> dict:
-        await self.report("Iniciando busqueda profunda masiva...", progress=5)
+        await self.report("Iniciando busqueda profunda...", progress=5)
 
         queries = self._build_queries(topic)
         raw_results: list[dict[str, Any]] = []
 
-        for idx, query in enumerate(queries):
-            pct = 5 + int((idx / len(queries)) * 20)
-            await self.report(f"Busqueda profunda ({idx+1}/{len(queries)}): {query[:50]}...", progress=pct)
+        # Initialize DuckDuckGo with retry
+        ddgs = None
+        try:
+            from duckduckgo_search import DDGS
+            ddgs = DDGS()
+        except Exception as exc:
+            logger.error("Failed to init DuckDuckGo for deep search: %s", exc)
+            await asyncio.sleep(2)
             try:
-                hits = await asyncio.to_thread(
-                    lambda q=query: DDGS().text(q, max_results=12)
-                )
-                if hits:
-                    raw_results.extend(hits)
-            except Exception as exc:
-                logger.warning("DDG deep query failed (%s): %s", query, exc)
-            await asyncio.sleep(0.5)
+                from duckduckgo_search import DDGS
+                ddgs = DDGS()
+            except Exception:
+                logger.error("DuckDuckGo permanently unavailable for deep search")
 
-        # CORE API
+        if ddgs:
+            for idx, query in enumerate(queries):
+                pct = 5 + int((idx / len(queries)) * 20)
+                await self.report(f"Busqueda profunda ({idx+1}/{len(queries)}): {query[:50]}...", progress=pct)
+
+                for attempt in range(2):
+                    try:
+                        hits = await asyncio.to_thread(ddgs.text, query, max_results=12)
+                        if hits:
+                            raw_results.extend(hits)
+                            logger.info("Deep query '%s': %d results", query[:40], len(hits))
+                        break
+                    except Exception as exc:
+                        logger.warning("Deep DDG attempt %d failed (%s): %s", attempt + 1, query[:40], exc)
+                        if attempt == 0:
+                            await asyncio.sleep(2)
+
+                await asyncio.sleep(0.8)
+        else:
+            await self.report("DuckDuckGo no disponible, usando solo CORE API...", progress=25)
+
+        # CORE API (always try, independent of DuckDuckGo)
         await self.report("Consultando CORE API (papers abiertos)...", progress=28)
         core_results = await self._search_core(topic)
         raw_results.extend(core_results)
+        logger.info("CORE API returned %d results", len(core_results))
 
         # Deduplicate
         seen_urls: set[str] = set()
@@ -58,8 +80,8 @@ class DeepResearchAgent(BaseAgent):
         await self.report(f"Extrayendo contenido de {len(unique)} fuentes profundas...", progress=32)
 
         sources: list[dict[str, str]] = []
-        for batch_start in range(0, len(unique), 10):
-            batch = unique[batch_start:batch_start + 10]
+        for batch_start in range(0, len(unique), 8):
+            batch = unique[batch_start:batch_start + 8]
             tasks = [self._extract(r) for r in batch]
             extracted = await asyncio.gather(*tasks, return_exceptions=True)
             for item in extracted:
@@ -71,6 +93,7 @@ class DeepResearchAgent(BaseAgent):
         )
 
         await self.report(f"Busqueda profunda completada: {len(sources)} fuentes.", progress=45)
+        logger.info("DeepResearchAgent finished: %d sources", len(sources))
         return {"sources": sources, "summary": summary}
 
     @staticmethod
