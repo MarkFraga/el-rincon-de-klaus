@@ -5,7 +5,7 @@ import logging
 from typing import Any
 
 import httpx
-import trafilatura
+from bs4 import BeautifulSoup
 from duckduckgo_search import DDGS
 
 from backend.agents.base_agent import BaseAgent
@@ -136,15 +136,18 @@ class DeepResearchAgent(BaseAgent):
             return {}
 
         try:
-            downloaded = await asyncio.wait_for(
-                asyncio.to_thread(trafilatura.fetch_url, url),
-                timeout=_FETCH_TIMEOUT,
-            )
-            if not downloaded:
-                return {}
+            async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, follow_redirects=True) as client:
+                resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                if resp.status_code != 200:
+                    return {}
+                html = resp.text
 
-            text = await asyncio.to_thread(trafilatura.extract, downloaded)
-            if not text:
+            soup = BeautifulSoup(html, "html.parser")
+            for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
+                tag.decompose()
+            text = soup.get_text(separator="\n", strip=True)
+
+            if not text or len(text) < 100:
                 return {}
 
             return {
@@ -152,6 +155,6 @@ class DeepResearchAgent(BaseAgent):
                 "url": url,
                 "content": text[:_MAX_CONTENT_CHARS],
             }
-        except (asyncio.TimeoutError, Exception) as exc:
+        except Exception as exc:
             logger.debug("Deep extraction failed for %s: %s", url, exc)
             return {}

@@ -4,26 +4,26 @@ import asyncio
 import logging
 from typing import Any
 
-import trafilatura
+import httpx
+from bs4 import BeautifulSoup
 from duckduckgo_search import DDGS
 
 from backend.agents.base_agent import BaseAgent
 
 logger = logging.getLogger(__name__)
 
-_FETCH_TIMEOUT = 10  # seconds per URL
+_FETCH_TIMEOUT = 10
 _MAX_CONTENT_CHARS = 2000
 
 
 class WebSearchAgent(BaseAgent):
-    """Agent 1 -- general web search via DuckDuckGo + trafilatura extraction."""
+    """Agent 1 -- general web search via DuckDuckGo + BeautifulSoup extraction."""
 
     def __init__(self, job_id: str):
         super().__init__(name="web_search", job_id=job_id)
 
-    # ------------------------------------------------------------------
     async def run(self, topic: str) -> dict:
-        await self.report("Generando consultas de búsqueda...", progress=5)
+        await self.report("Generando consultas de busqueda...", progress=5)
 
         queries = self._build_queries(topic)
         raw_results: list[dict[str, Any]] = []
@@ -40,7 +40,6 @@ class WebSearchAgent(BaseAgent):
             except Exception as exc:
                 logger.warning("DuckDuckGo query failed (%s): %s", query, exc)
 
-        # Deduplicate by URL
         seen_urls: set[str] = set()
         unique: list[dict[str, Any]] = []
         for r in raw_results:
@@ -49,9 +48,7 @@ class WebSearchAgent(BaseAgent):
                 seen_urls.add(url)
                 unique.append(r)
 
-        await self.report(
-            f"Extrayendo contenido de {len(unique)} fuentes...", progress=35
-        )
+        await self.report(f"Extrayendo contenido de {len(unique)} fuentes...", progress=35)
 
         sources: list[dict[str, str]] = []
         tasks = [self._extract(r) for r in unique]
@@ -65,41 +62,39 @@ class WebSearchAgent(BaseAgent):
             f"## {s['title']}\n{s['content']}" for s in sources
         )
 
-        await self.report(
-            f"Búsqueda web completada: {len(sources)} fuentes útiles.",
-            progress=45,
-        )
+        await self.report(f"Busqueda web completada: {len(sources)} fuentes utiles.", progress=45)
 
         return {"sources": sources, "summary": summary}
 
-    # ------------------------------------------------------------------
     @staticmethod
     def _build_queries(topic: str) -> list[str]:
         return [
             topic,
             f"{topic} explicado",
-            f"{topic} investigación científica",
+            f"{topic} investigacion cientifica",
             f"{topic} datos curiosos",
         ]
 
-    # ------------------------------------------------------------------
     async def _extract(self, result: dict[str, Any]) -> dict[str, str]:
         url = result.get("href") or result.get("link") or ""
-        title = result.get("title", "Sin título")
+        title = result.get("title", "Sin titulo")
 
         if not url:
             return {}
 
         try:
-            downloaded = await asyncio.wait_for(
-                asyncio.to_thread(trafilatura.fetch_url, url),
-                timeout=_FETCH_TIMEOUT,
-            )
-            if not downloaded:
-                return {}
+            async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, follow_redirects=True) as client:
+                resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                if resp.status_code != 200:
+                    return {}
+                html = resp.text
 
-            text = await asyncio.to_thread(trafilatura.extract, downloaded)
-            if not text:
+            soup = BeautifulSoup(html, "html.parser")
+            for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
+                tag.decompose()
+            text = soup.get_text(separator="\n", strip=True)
+
+            if not text or len(text) < 100:
                 return {}
 
             return {
@@ -107,6 +102,6 @@ class WebSearchAgent(BaseAgent):
                 "url": url,
                 "content": text[:_MAX_CONTENT_CHARS],
             }
-        except (asyncio.TimeoutError, Exception) as exc:
+        except Exception as exc:
             logger.debug("Extraction failed for %s: %s", url, exc)
             return {}
