@@ -8,6 +8,7 @@ from backend.agents.academic_agent import AcademicAgent
 from backend.agents.deep_research_agent import DeepResearchAgent
 from backend.agents.organizer_agent import OrganizerAgent
 from backend.audio.audio_pipeline import AudioPipeline
+from backend.guests.guest_generator import generate_guest
 from backend.models import PodcastJob, AgentStatus
 from backend.ws_manager import ws_manager
 
@@ -22,7 +23,7 @@ async def generate_podcast(topic: str, job_id: str) -> None:
     job = jobs[job_id]
 
     try:
-        # ── Phase 1: Run 3 research agents in parallel ──────────────
+        # ── Phase 1: Run 3 research agents + guest generation in parallel ──
         job.agent_web = AgentStatus.RUNNING
         job.agent_academic = AgentStatus.RUNNING
         job.agent_deep = AgentStatus.RUNNING
@@ -42,6 +43,7 @@ async def generate_podcast(topic: str, job_id: str) -> None:
             web_agent.run(topic),
             academic_agent.run(topic),
             deep_agent.run(topic),
+            generate_guest(topic),
             return_exceptions=True,
         )
 
@@ -49,8 +51,23 @@ async def generate_podcast(topic: str, job_id: str) -> None:
         academic_result = results[1] if not isinstance(results[1], Exception) else {"papers": [], "summary": ""}
         deep_result = results[2] if not isinstance(results[2], Exception) else {"sources": [], "summary": ""}
 
+        # Guest profile with fallback
+        guest_profile = results[3] if not isinstance(results[3], Exception) else {
+            "full_name": "Invitado Anonimo",
+            "country": "Desconocido",
+            "gender": "male",
+            "age_range": "40-50",
+            "archetype": "experto",
+            "personality_traits": ["analitico", "curioso"],
+            "connection_to_topic": f"Experto en {topic}",
+            "dynamic": "guest_expert",
+            "speaking_style": "Habla con precision y datos concretos",
+            "voice_id": "es-MX-JorgeNeural",
+            "post_process": None,
+        }
+
         # Log any agent errors but continue
-        for idx, label in enumerate(["web", "academic", "deep"]):
+        for idx, label in enumerate(["web", "academic", "deep", "guest"]):
             if isinstance(results[idx], Exception):
                 logger.error("Agent %s failed: %s", label, results[idx])
 
@@ -68,27 +85,29 @@ async def generate_podcast(topic: str, job_id: str) -> None:
         # ── Phase 2: Organizer synthesises and creates script ───────
         job.agent_organizer = AgentStatus.RUNNING
         organizer = OrganizerAgent(job_id)
-        script_result = await organizer.run(topic, web_result, academic_result, deep_result)
+        script_result = await organizer.run(topic, web_result, academic_result, deep_result, guest_profile)
         job.agent_organizer = AgentStatus.DONE
-        job.expert_name = script_result["expert_name"]
-        job.expert_country = script_result["expert_country"]
+        job.guest_name = script_result["guest_name"]
+        job.guest_country = script_result["guest_country"]
+        job.guest_role = script_result.get("guest_role", "experto")
         job.progress_pct = 70
 
         await ws_manager.broadcast(job_id, {
             "status": "running",
             "phase": "script_complete",
             "progress": 70,
-            "expert_name": job.expert_name,
-            "expert_country": job.expert_country,
+            "guest_name": job.guest_name,
+            "guest_country": job.guest_country,
+            "guest_role": job.guest_role,
         })
 
         # ── Phase 3: Generate audio ────────────────────────────────
         job.audio_generation = AgentStatus.RUNNING
         pipeline = AudioPipeline(job_id)
-        expert_voice_id = script_result.get("expert_voice_id", "es-MX-JorgeNeural")
-        expert_post_process = script_result.get("expert_post_process", None)
+        guest_voice_id = script_result.get("guest_voice_id", "es-MX-JorgeNeural")
+        guest_post_process = script_result.get("guest_post_process", None)
         audio_path = await pipeline.generate(
-            script_result["script"], expert_voice_id, expert_post_process
+            script_result["script"], guest_voice_id, guest_post_process
         )
         job.audio_generation = AgentStatus.DONE
         job.audio_url = f"/api/audio/{job_id}"

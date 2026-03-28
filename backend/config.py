@@ -21,4 +21,8 @@ EMOTION_PROSODY = {
     "excited":     {"rate": "+12%", "pitch": "+2Hz"},
     "thoughtful":  {"rate": "-8%",  "pitch": "-1Hz"},
     "challenging": {"rate": "+5%",  "pitch": "+1Hz"},
+    "humorous":    {"rate": "+8%",  "pitch": "+1Hz"},
+    "nostalgic":   {"rate": "-5%",  "pitch": "-1Hz"},
+    "surprised":   {"rate": "+15%", "pitch": "+3Hz"},
+    "skeptical":   {"rate": "-3%",  "pitch": "+1Hz"},
 }

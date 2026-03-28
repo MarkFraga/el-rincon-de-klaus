@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import re
@@ -10,7 +9,6 @@ from google import genai
 
 from backend.agents.base_agent import BaseAgent
 from backend.config import GEMINI_API_KEY, GEMINI_MODEL
-from backend.audio.voice_profiles import EXPERT_VOICES, get_expert_profile
 
 logger = logging.getLogger(__name__)
 
@@ -29,42 +27,51 @@ class OrganizerAgent(BaseAgent):
         web_result: dict[str, Any],
         academic_result: dict[str, Any],
         deep_result: dict[str, Any],
+        guest_profile: dict[str, Any] | None = None,
     ) -> dict:
-        await self.report("Seleccionando experto y compilando investigación...", progress=52)
+        await self.report("Compilando investigacion y preparando guion...", progress=52)
 
-        expert = get_expert_profile(topic)
-        expert_name = expert["name"]
-        expert_country = expert["country"]
-        expert_voice_id = expert["voice_id"]
-        expert_post_process = expert.get("post_process", None)
-        expert_gender = expert.get("gender", "male")
+        if guest_profile is None:
+            guest_profile = {
+                "full_name": "Invitado Anonimo",
+                "country": "Desconocido",
+                "gender": "male",
+                "age_range": "40-50",
+                "archetype": "academic_researcher",
+                "personality_traits": ["analitico", "curioso"],
+                "connection_to_topic": f"Experto en {topic}",
+                "dynamic": "guest_expert",
+                "speaking_style": "Habla con precision y datos concretos",
+            }
+
+        guest_name = guest_profile.get("full_name", "Invitado")
+        guest_country = guest_profile.get("country", "Desconocido")
+        guest_voice_id = guest_profile.get("voice_id", "es-MX-JorgeNeural")
+        guest_post_process = guest_profile.get("post_process", None)
+        guest_role = guest_profile.get("archetype", "experto")
+        dynamic = guest_profile.get("dynamic", "guest_expert")
 
         research_text = self._compile_research(web_result, academic_result, deep_result)
 
-        await self.report("Generando guión del podcast con Gemini...", progress=58)
+        await self.report("Generando guion del podcast con Gemini...", progress=58)
 
-        prompt = self._build_prompt(topic, expert_name, expert_country, research_text, expert_gender)
+        prompt = self._build_prompt(topic, guest_profile, research_text)
 
-        script = await self._generate_script(prompt, topic, expert_name, expert_country, research_text)
+        script = await self._generate_script(prompt, topic, guest_profile, research_text)
 
         await self.report(
-            f"Guión generado: {len(script)} segmentos con {expert_name} de {expert_country}.",
+            f"Guion generado: {len(script)} segmentos con {guest_name} de {guest_country}.",
             progress=68,
         )
 
         return {
             "script": script,
-            "expert_name": expert_name,
-            "expert_country": expert_country,
-            "expert_voice_id": expert_voice_id,
-            "expert_post_process": expert_post_process,
+            "guest_name": guest_name,
+            "guest_country": guest_country,
+            "guest_voice_id": guest_voice_id,
+            "guest_post_process": guest_post_process,
+            "guest_role": guest_role,
         }
-
-    # ------------------------------------------------------------------
-    def _pick_expert(self, topic: str) -> dict[str, str]:
-        """Deterministically pick an expert based on topic hash."""
-        h = int(hashlib.md5(topic.encode()).hexdigest(), 16)
-        return EXPERT_VOICES[h % len(EXPERT_VOICES)]
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -104,42 +111,101 @@ class OrganizerAgent(BaseAgent):
                 lines.append(f"\n### {s.get('title', '')}\nURL: {s.get('url', '')}\n{s.get('content', '')[:2500]}")
             sections.append("\n".join(lines))
 
-        return "\n\n".join(sections) if sections else "No se encontró investigación relevante."
+        return "\n\n".join(sections) if sections else "No se encontro investigacion relevante."
 
     # ------------------------------------------------------------------
     def _build_prompt(
         self,
         topic: str,
-        expert_name: str,
-        expert_country: str,
+        guest_profile: dict[str, Any],
         research_text: str,
-        expert_gender: str = "male",
     ) -> str:
-        gender_word = "Experto" if expert_gender == "male" else "Experta"
-        pronoun = "el" if expert_gender == "male" else "ella"
+        full_name = guest_profile.get("full_name", "Invitado")
+        country = guest_profile.get("country", "Desconocido")
+        gender = guest_profile.get("gender", "male")
+        connection = guest_profile.get("connection_to_topic", f"Experto en {topic}")
+        speaking_style = guest_profile.get("speaking_style", "Habla con claridad")
+        traits = ", ".join(guest_profile.get("personality_traits", ["analitico"]))
+        dynamic = guest_profile.get("dynamic", "guest_expert")
+
+        # Build characters block based on dynamic
+        if dynamic == "guest_expert":
+            characters_block = f"""PERSONAJES:
+- KLAUS: Presentador veterano, voz ronca y caracter audaz. Curioso, esceptico, provoca con inteligencia.
+- {full_name} (de {country}): {connection}. {speaking_style}. Personalidad: {traits}.
+  Es LA autoridad en este tema. Klaus le hace preguntas dificiles y el/ella responde con datos y experiencia."""
+            # Expert cites papers
+            citation_rule = f"3. {full_name} cita al menos 10 datos especificos, estudios o papers de la investigacion proporcionada con nombres de autores y fechas."
+            question_rule = "2. KLAUS hace al menos 8 preguntas genuinamente dificiles que el invitado debe esforzarse en responder."
+            debate_style = "Es un DEBATE REAL y EXTENSO, no un monologo. Se interrumpen, se cuestionan, construyen sobre las ideas del otro."
+
+        elif dynamic == "guest_learner":
+            characters_block = f"""PERSONAJES:
+- KLAUS: El EXPERTO en este tema. Tiene toda la investigacion y sabe de lo que habla. Explica con pasion y detalle.
+- {full_name} (de {country}): {connection}. {speaking_style}.
+  NO es experto. Hace preguntas genuinas, se sorprende, pide que le expliquen mas. Aporta perspectiva de la calle."""
+            citation_rule = "3. KLAUS cita al menos 10 datos especificos, estudios o papers de la investigacion proporcionada con nombres de autores y fechas."
+            question_rule = f"2. {full_name} hace al menos 8 preguntas genuinas y curiosas que KLAUS responde con profundidad."
+            debate_style = "Es una CONVERSACION EDUCATIVA y EXTENSA. Klaus explica, el invitado pregunta, reacciona y aporta su perspectiva."
+
+        elif dynamic == "debate":
+            characters_block = f"""PERSONAJES:
+- KLAUS: Defiende una posicion sobre el tema basada en la investigacion. Argumenta con datos.
+- {full_name} (de {country}): {connection}. {speaking_style}.
+  Tiene una perspectiva DIFERENTE o contraria. Debaten con respeto pero con firmeza. Ninguno cede facilmente."""
+            citation_rule = "3. Ambos citan datos especificos, estudios o papers de la investigacion proporcionada (al menos 10 en total) con nombres de autores y fechas."
+            question_rule = "2. Ambos se hacen preguntas dificiles mutuamente. Al menos 8 intercambios de cuestionamiento directo."
+            debate_style = "Es un DEBATE REAL y EXTENSO con posiciones contrarias. Se desafian, argumentan y contraargumentan con firmeza pero respeto."
+
+        elif dynamic == "interview":
+            characters_block = f"""PERSONAJES:
+- KLAUS: Entrevistador experimentado. Saca las mejores historias del invitado con preguntas certeras.
+- {full_name} (de {country}): {connection}. {speaking_style}.
+  Tiene una HISTORIA PERSONAL fascinante. Cuenta desde su experiencia vivida, no desde teoria."""
+            citation_rule = f"3. {full_name} menciona al menos 10 datos, momentos o detalles concretos de su experiencia, conectados con la investigacion proporcionada."
+            question_rule = "2. KLAUS hace al menos 8 preguntas certeras que sacan las mejores historias y reflexiones del invitado."
+            debate_style = "Es una ENTREVISTA EN PROFUNDIDAD. Klaus guia la conversacion y el invitado comparte su experiencia vivida con detalle."
+
+        elif dynamic == "storytelling":
+            characters_block = f"""PERSONAJES:
+- KLAUS: Escucha fascinado, hace preguntas para profundizar, anade contexto cientifico cuando es relevante.
+- {full_name} (de {country}): {connection}. {speaking_style}.
+  Narra su experiencia de decadas. Tiene anecdotas increibles. Es sabio/a y reflexivo/a."""
+            citation_rule = "3. Se mencionan al menos 10 datos concretos, anecdotas o referencias de la investigacion proporcionada con contexto y detalles."
+            question_rule = "2. KLAUS hace al menos 8 preguntas que invitan a profundizar en las historias y anecdotas del invitado."
+            debate_style = "Es una NARRACION FASCINANTE. El invitado cuenta historias increibles y Klaus profundiza con preguntas y contexto."
+
+        else:
+            # Default to guest_expert
+            characters_block = f"""PERSONAJES:
+- KLAUS: Presentador veterano, voz ronca y caracter audaz. Curioso, esceptico, provoca con inteligencia.
+- {full_name} (de {country}): {connection}. {speaking_style}. Personalidad: {traits}.
+  Es LA autoridad en este tema. Klaus le hace preguntas dificiles y el/ella responde con datos y experiencia."""
+            citation_rule = f"3. {full_name} cita al menos 10 datos especificos, estudios o papers de la investigacion proporcionada con nombres de autores y fechas."
+            question_rule = "2. KLAUS hace al menos 8 preguntas genuinamente dificiles que el invitado debe esforzarse en responder."
+            debate_style = "Es un DEBATE REAL y EXTENSO, no un monologo. Se interrumpen, se cuestionan, construyen sobre las ideas del otro."
+
         return f"""Eres un guionista profesional de podcasts. Escribe el guion completo para un episodio de "EL RINCON DE KLAUS".
 
-PERSONAJES:
-- KLAUS: Presentador del podcast. Un hombre mayor, con voz ronca pero audaz y carismatica. Curioso, esceptico, provocador. Hace preguntas dificiles. Habla con la confianza de alguien que ha visto mucho mundo. Usa expresiones como "a ver, a ver", "espera espera", "esto me fascina".
-- {expert_name} (de {expert_country}): {gender_word} mundial en {topic}. Apasionado/a, usa datos concretos, cita papers especificos. A veces discrepa con Klaus. Tiene acento de {expert_country}.
+{characters_block}
 
 REGLAS DEL GUION (MUY IMPORTANTE - SEGUIR TODAS):
-1. Es un DEBATE REAL y EXTENSO, no un monologo. Se interrumpen, se cuestionan, construyen sobre las ideas del otro.
-2. KLAUS hace al menos 8 preguntas genuinamente dificiles que el experto debe esforzarse en responder.
-3. El experto cita al menos 10 datos especificos, estudios o papers de la investigacion proporcionada con nombres de autores y fechas.
-4. Incluye MULTIPLES momentos de desacuerdo que se resuelven con argumentos detallados.
+1. {debate_style}
+{question_rule}
+{citation_rule}
+4. Incluye MULTIPLES momentos de desacuerdo o sorpresa que se resuelven con argumentos detallados.
 5. Incluye al menos 2 momentos "espera, eso lo cambia todo" o revelaciones sorprendentes.
 6. El dialogo debe sentirse MUY NATURAL: incluye reacciones largas ("hmm, dejame pensar...", "exacto, pero mira...", "pero espera un momento...", "a ver a ver, esto es importante", "increible, no tenia idea").
 7. Klaus SIEMPRE abre con una intro larga y enganchante sobre el tema (minimo 4-5 frases) y presenta al invitado con entusiasmo.
 8. Desarrolla CADA subtema en profundidad antes de pasar al siguiente. No resumas, EXPLICA con detalle.
-9. Cada respuesta del experto debe ser LARGA y detallada (minimo 3-4 frases por intervencion). No respuestas cortas.
+9. Cada respuesta del invitado debe ser LARGA y detallada (minimo 3-4 frases por intervencion). No respuestas cortas.
 10. Cada intervencion de Klaus tambien debe ser sustancial: reacciona, comenta, anade contexto, y luego pregunta.
 11. Termina con una conclusion extensa y una pregunta abierta que deje pensando.
 12. DURACION OBLIGATORIA: entre 55 y 75 intercambios. Esto es CRITICO para alcanzar 20+ minutos de audio.
 13. NO uses marcadores como [PAUSA] o [MUSICA]. Solo dialogo puro.
 14. Cubre TODOS los angulos del tema: historia, ciencia actual, controversias, futuro, impacto social, datos sorprendentes.
 
-DATOS DE INVESTIGACIÓN:
+DATOS DE INVESTIGACION:
 {research_text}
 
 FORMATO DE SALIDA (JSON estricto, sin markdown):
@@ -149,7 +215,7 @@ FORMATO DE SALIDA (JSON estricto, sin markdown):
   ...
 ]
 
-Emociones válidas: neutral, excited, thoughtful, challenging
+Emociones validas: neutral, excited, thoughtful, challenging, humorous, nostalgic, surprised, skeptical
 
 IMPORTANTE: Devuelve SOLO el JSON array, sin texto adicional, sin ```json, sin explicaciones."""
 
@@ -158,11 +224,10 @@ IMPORTANTE: Devuelve SOLO el JSON array, sin texto adicional, sin ```json, sin e
         self,
         prompt: str,
         topic: str,
-        expert_name: str,
-        expert_country: str,
+        guest_profile: dict[str, Any],
         research_text: str,
     ) -> list[dict[str, str]]:
-        """Call Gemini and parse the script JSON, with one retry on failure."""
+        """Call Gemini and parse the script JSON, with retries on failure."""
         import asyncio
 
         for attempt in range(3):
@@ -171,7 +236,7 @@ IMPORTANTE: Devuelve SOLO el JSON array, sin texto adicional, sin ```json, sin e
                     wait_secs = 30 * attempt
                     await self.report(f"Reintentando en {wait_secs}s (intento {attempt+1}/3)...", progress=63)
                     await asyncio.sleep(wait_secs)
-                    prompt = self._build_strict_retry_prompt(topic, expert_name, expert_country, research_text)
+                    prompt = self._build_strict_retry_prompt(topic, guest_profile, research_text)
 
                 response = await asyncio.to_thread(
                     self._client.models.generate_content,
@@ -184,10 +249,10 @@ IMPORTANTE: Devuelve SOLO el JSON array, sin texto adicional, sin ```json, sin e
             except Exception as exc:
                 logger.warning("Script generation attempt %d failed: %s", attempt + 1, exc)
                 if attempt == 2:
-                    raise RuntimeError(f"No se pudo generar el guión tras 3 intentos: {exc}") from exc
+                    raise RuntimeError(f"No se pudo generar el guion tras 3 intentos: {exc}") from exc
 
         # Unreachable, but satisfies the type checker
-        raise RuntimeError("No se pudo generar el guión.")
+        raise RuntimeError("No se pudo generar el guion.")
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -225,29 +290,41 @@ IMPORTANTE: Devuelve SOLO el JSON array, sin texto adicional, sin ```json, sin e
             except json.JSONDecodeError:
                 pass
 
-        raise ValueError("No se pudo parsear el JSON del guión generado.")
+        raise ValueError("No se pudo parsear el JSON del guion generado.")
 
     # ------------------------------------------------------------------
     def _build_strict_retry_prompt(
         self,
         topic: str,
-        expert_name: str,
-        expert_country: str,
+        guest_profile: dict[str, Any],
         research_text: str,
     ) -> str:
-        return f"""INSTRUCCIÓN ESTRICTA: Genera ÚNICAMENTE un JSON array válido. Sin texto antes ni después.
+        guest_name = guest_profile.get("full_name", "Invitado")
+        guest_country = guest_profile.get("country", "Desconocido")
+        dynamic = guest_profile.get("dynamic", "guest_expert")
 
-Genera un guion de podcast LARGO entre KLAUS (presentador) y {expert_name} (de {expert_country}, experto en {topic}).
+        dynamic_desc = {
+            "guest_expert": f"{guest_name} es el experto, Klaus pregunta",
+            "guest_learner": f"KLAUS es el experto, {guest_name} pregunta y aprende",
+            "debate": f"Klaus y {guest_name} debaten con posiciones contrarias",
+            "interview": f"Klaus entrevista a {guest_name} sobre su experiencia",
+            "storytelling": f"{guest_name} narra historias fascinantes, Klaus profundiza",
+        }.get(dynamic, f"{guest_name} es el experto, Klaus pregunta")
+
+        return f"""INSTRUCCION ESTRICTA: Genera UNICAMENTE un JSON array valido. Sin texto antes ni despues.
+
+Genera un guion de podcast LARGO entre KLAUS (presentador) y {guest_name} (de {guest_country}).
+Dinamica: {dynamic_desc}.
 MINIMO 55-75 intercambios. Cada intervencion debe ser LARGA (3-5 frases minimo). Debate real con desacuerdos, datos especificos y reacciones naturales. Cubre el tema en profundidad.
 
 Investigacion disponible:
 {research_text[:12000]}
 
-FORMATO OBLIGATORIO (solo esto, nada más):
+FORMATO OBLIGATORIO (solo esto, nada mas):
 [
-  {{"speaker": "KLAUS", "text": "texto aquí", "emotion": "excited"}},
-  {{"speaker": "EXPERT", "text": "texto aquí", "emotion": "thoughtful"}}
+  {{"speaker": "KLAUS", "text": "texto aqui", "emotion": "excited"}},
+  {{"speaker": "EXPERT", "text": "texto aqui", "emotion": "thoughtful"}}
 ]
 
-Emociones válidas: neutral, excited, thoughtful, challenging
+Emociones validas: neutral, excited, thoughtful, challenging, humorous, nostalgic, surprised, skeptical
 RESPONDE SOLO CON EL JSON ARRAY."""

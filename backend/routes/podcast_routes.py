@@ -49,7 +49,8 @@ async def list_podcasts():
                 "id": job.id,
                 "topic": job.topic,
                 "audio_url": job.audio_url,
-                "expert_name": job.expert_name,
-                "expert_country": job.expert_country,
+                "guest_name": job.guest_name,
+                "guest_country": job.guest_country,
+                "guest_role": job.guest_role,
             })
     return podcasts

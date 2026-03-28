@@ -109,13 +109,15 @@ function handleProgress(data) {
         document.getElementById('player-topic').textContent =
             document.getElementById('progress-topic').textContent;
 
-        var expertText = '';
-        if (data.expert_name && data.country) {
-            expertText = 'Con ' + data.expert_name + ' desde ' + data.country;
-        } else if (data.expert_name) {
-            expertText = 'Con ' + data.expert_name;
+        var guestText = '';
+        if (data.guest_name && data.guest_role && data.guest_country) {
+            guestText = 'Con ' + data.guest_name + ' (' + data.guest_role + ') desde ' + data.guest_country;
+        } else if (data.guest_name && data.guest_country) {
+            guestText = 'Con ' + data.guest_name + ' desde ' + data.guest_country;
+        } else if (data.guest_name) {
+            guestText = 'Con ' + data.guest_name;
         }
-        document.getElementById('player-expert').textContent = expertText;
+        document.getElementById('player-expert').textContent = guestText;
 
         showScreen('player');
         var audioUrl = data.audio_url || '/api/audio/' + state.jobId;
@@ -269,8 +271,9 @@ async function loadPodcastList() {
             html += '<div class="podcast-item" onclick="playPodcast(\'' +
                 escapeAttr(p.id || p.job_id) + '\', \'' +
                 escapeAttr(p.topic) + '\', \'' +
-                escapeAttr(p.expert_name || '') + '\', \'' +
-                escapeAttr(p.country || '') + '\')">' +
+                escapeAttr(p.guest_name || '') + '\', \'' +
+                escapeAttr(p.guest_country || '') + '\', \'' +
+                escapeAttr(p.guest_role || '') + '\')">' +
                 '<div class="podcast-item-icon">&#127911;</div>' +
                 '<div class="podcast-item-info">' +
                 '<div class="podcast-item-title">' + escapeHtml(p.topic) + '</div>' +
@@ -285,15 +288,17 @@ async function loadPodcastList() {
     }
 }
 
-function playPodcast(id, topic, expertName, country) {
+function playPodcast(id, topic, guestName, guestCountry, guestRole) {
     document.getElementById('player-topic').textContent = topic;
-    var expertText = '';
-    if (expertName && country) {
-        expertText = 'Con ' + expertName + ' desde ' + country;
-    } else if (expertName) {
-        expertText = 'Con ' + expertName;
+    var guestText = '';
+    if (guestName && guestRole && guestCountry) {
+        guestText = 'Con ' + guestName + ' (' + guestRole + ') desde ' + guestCountry;
+    } else if (guestName && guestCountry) {
+        guestText = 'Con ' + guestName + ' desde ' + guestCountry;
+    } else if (guestName) {
+        guestText = 'Con ' + guestName;
     }
-    document.getElementById('player-expert').textContent = expertText;
+    document.getElementById('player-expert').textContent = guestText;
     showScreen('player');
     loadAudio('/api/audio/' + id);
 }

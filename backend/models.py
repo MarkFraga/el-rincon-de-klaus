@@ -25,8 +25,9 @@ class PodcastJob(BaseModel):
     progress_pct: int = 0
     audio_url: Optional[str] = None
     error: Optional[str] = None
-    expert_name: Optional[str] = None
-    expert_country: Optional[str] = None
+    guest_name: Optional[str] = None
+    guest_country: Optional[str] = None
+    guest_role: Optional[str] = None
 
 
 class ScriptSegment(BaseModel):
