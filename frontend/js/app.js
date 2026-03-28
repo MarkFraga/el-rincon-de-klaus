@@ -22,6 +22,46 @@ function showScreen(name) {
     state.screen = name;
 }
 
+/* ===== TOAST NOTIFICATIONS ===== */
+function showToast(message, type) {
+    type = type || 'error';
+    var container = document.getElementById('toast-container');
+    if (!container) return;
+
+    var toast = document.createElement('div');
+    toast.className = 'toast' + (type === 'success' ? ' toast-success' : '');
+
+    var icon = type === 'success' ? '&#10003;' : '&#9888;';
+    toast.innerHTML = '<span class="toast-icon">' + icon + '</span><span>' + escapeHtml(message) + '</span>';
+    container.appendChild(toast);
+
+    setTimeout(function() {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 4000);
+}
+
+/* ===== FRIENDLY ERROR MESSAGES ===== */
+function friendlyError(err) {
+    var msg = (err && err.message) ? err.message : String(err);
+
+    if (msg.indexOf('Failed to fetch') !== -1 || msg.indexOf('NetworkError') !== -1) {
+        return 'No se pudo conectar con el servidor. Verifica tu conexion a internet.';
+    }
+    if (msg.indexOf('500') !== -1) {
+        return 'Error interno del servidor. Intenta de nuevo en unos momentos.';
+    }
+    if (msg.indexOf('429') !== -1) {
+        return 'Demasiadas solicitudes. Espera un momento antes de intentar de nuevo.';
+    }
+    if (msg.indexOf('404') !== -1) {
+        return 'Servicio no encontrado. Verifica que el servidor este activo.';
+    }
+    if (msg.indexOf('timeout') !== -1 || msg.indexOf('Timeout') !== -1) {
+        return 'La solicitud tomo demasiado tiempo. Intenta de nuevo.';
+    }
+    return 'Ocurrio un error inesperado. Intenta de nuevo.';
+}
+
 /* ===== GENERATE PODCAST ===== */
 async function generatePodcast() {
     var topic = document.getElementById('topic-input').value.trim();
@@ -31,8 +71,15 @@ async function generatePodcast() {
     }
 
     var btn = document.getElementById('btn-generate');
+    var btnText = btn.querySelector('.btn-text');
+    var btnIcon = btn.querySelector('.btn-icon');
+    var btnSpinner = btn.querySelector('.btn-spinner');
+
+    // Set generating state
     btn.disabled = true;
-    btn.textContent = 'Iniciando...';
+    if (btnText) btnText.textContent = 'GENERANDO...';
+    if (btnIcon) btnIcon.style.display = 'none';
+    if (btnSpinner) btnSpinner.style.display = 'inline-block';
 
     try {
         var res = await fetch('/api/generate', {
@@ -49,15 +96,22 @@ async function generatePodcast() {
         state.jobId = data.job_id;
 
         document.getElementById('progress-topic').textContent = topic;
+        // Hide guest info until we get it
+        var guestInfoEl = document.getElementById('progress-guest-info');
+        if (guestInfoEl) guestInfoEl.style.display = 'none';
+
         showScreen('progress');
         resetAgentCards();
         connectWebSocket(data.job_id);
         startPolling(data.job_id);
     } catch (err) {
-        alert('No se pudo iniciar la generacion: ' + err.message);
+        showToast(friendlyError(err));
     } finally {
+        // Reset button state
         btn.disabled = false;
-        btn.innerHTML = '<span class="btn-icon">&#9889;</span> GENERAR PODCAST';
+        if (btnText) btnText.textContent = 'GENERAR PODCAST';
+        if (btnIcon) btnIcon.style.display = '';
+        if (btnSpinner) btnSpinner.style.display = 'none';
     }
 }
 
@@ -129,7 +183,7 @@ function handleProgress(data) {
     if (data.status === 'error') {
         stopPolling();
         closeWebSocket();
-        alert('Error: ' + (data.error || 'Error desconocido'));
+        showToast(data.error ? friendlyError({ message: data.error }) : 'Ocurrio un error durante la generacion.');
         showScreen('home');
         return;
     }
@@ -137,6 +191,11 @@ function handleProgress(data) {
     // Update agent cards
     if (data.agent) {
         updateAgentCard(data.agent, data.agent_status || data.status, data.message || '');
+    }
+
+    // Show guest info on progress screen as soon as available
+    if (data.guest_name) {
+        showProgressGuestInfo(data.guest_name, data.guest_role, data.guest_country);
     }
 
     // Update progress bar
@@ -150,20 +209,42 @@ function handleProgress(data) {
     }
 }
 
+/* ===== SHOW GUEST INFO ON PROGRESS SCREEN ===== */
+function showProgressGuestInfo(name, role, country) {
+    var infoEl = document.getElementById('progress-guest-info');
+    var textEl = document.getElementById('progress-guest-text');
+    if (!infoEl || !textEl) return;
+
+    var parts = [];
+    if (name) parts.push(name);
+    if (role) parts.push(role);
+    if (country) parts.push(country);
+
+    if (parts.length > 0) {
+        textEl.textContent = parts.join(' - ');
+        infoEl.style.display = '';
+    }
+}
+
 /* ===== AGENT CARDS ===== */
+// Map backend agent names to frontend element suffixes
 var agentMap = {
     'web': 'web',
+    'web_search': 'web',
     'academic': 'academic',
     'deep': 'deep',
+    'deep_research': 'deep',
     'organizer': 'organizer'
 };
 
 function resetAgentCards() {
-    Object.keys(agentMap).forEach(function(key) {
+    ['web', 'academic', 'deep', 'organizer'].forEach(function(key) {
         var card = document.getElementById('agent-' + key);
         var dot = document.getElementById('dot-' + key);
         var activity = document.getElementById('activity-' + key);
-        if (card) card.className = 'agent-card';
+        if (card) {
+            card.className = 'agent-card';
+        }
         if (dot) dot.className = 'status-dot pending';
         if (activity) activity.textContent = 'En espera';
     });
@@ -172,7 +253,9 @@ function resetAgentCards() {
 }
 
 function updateAgentCard(agentName, status, message) {
-    var key = agentMap[agentName] || agentName;
+    var key = agentMap[agentName];
+    if (!key) key = agentName;
+
     var card = document.getElementById('agent-' + key);
     var dot = document.getElementById('dot-' + key);
     var activity = document.getElementById('activity-' + key);
@@ -181,8 +264,16 @@ function updateAgentCard(agentName, status, message) {
 
     // Update card class
     card.className = 'agent-card';
-    if (status === 'running') card.classList.add('running');
-    else if (status === 'done' || status === 'complete') card.classList.add('done');
+    if (status === 'running') {
+        card.classList.add('running');
+    } else if (status === 'done' || status === 'complete') {
+        card.classList.add('done');
+        // Flash green briefly
+        card.classList.add('done-flash');
+        setTimeout(function() {
+            card.classList.remove('done-flash');
+        }, 1500);
+    }
 
     // Update dot
     if (dot) {
@@ -268,16 +359,40 @@ async function loadPodcastList() {
         var html = '';
         podcasts.forEach(function(p) {
             var date = p.created_at ? formatDate(p.created_at) : '';
+            var guestName = p.guest_name || '';
+            var guestRole = p.guest_role || '';
+            var guestCountry = p.guest_country || '';
+
+            // Build role line
+            var roleLine = '';
+            if (guestName && guestRole) {
+                roleLine = guestName + ' - ' + guestRole;
+            } else if (guestName) {
+                roleLine = guestName;
+            }
+
+            // Build meta line with date and country
+            var metaParts = [];
+            if (date) metaParts.push(date);
+            if (guestCountry) metaParts.push(guestCountry);
+
+            var metaHtml = '';
+            for (var i = 0; i < metaParts.length; i++) {
+                if (i > 0) metaHtml += '<span class="podcast-item-meta-dot"></span>';
+                metaHtml += escapeHtml(metaParts[i]);
+            }
+
             html += '<div class="podcast-item" onclick="playPodcast(\'' +
                 escapeAttr(p.id || p.job_id) + '\', \'' +
                 escapeAttr(p.topic) + '\', \'' +
-                escapeAttr(p.guest_name || '') + '\', \'' +
-                escapeAttr(p.guest_country || '') + '\', \'' +
-                escapeAttr(p.guest_role || '') + '\')">' +
+                escapeAttr(guestName) + '\', \'' +
+                escapeAttr(guestCountry) + '\', \'' +
+                escapeAttr(guestRole) + '\')">' +
                 '<div class="podcast-item-icon">&#127911;</div>' +
                 '<div class="podcast-item-info">' +
                 '<div class="podcast-item-title">' + escapeHtml(p.topic) + '</div>' +
-                '<div class="podcast-item-meta">' + date + '</div>' +
+                (roleLine ? '<div class="podcast-item-role">' + escapeHtml(roleLine) + '</div>' : '') +
+                '<div class="podcast-item-meta">' + metaHtml + '</div>' +
                 '</div>' +
                 '<div class="podcast-item-play">&#9654;</div>' +
                 '</div>';
@@ -289,6 +404,7 @@ async function loadPodcastList() {
 }
 
 function playPodcast(id, topic, guestName, guestCountry, guestRole) {
+    state.jobId = id;
     document.getElementById('player-topic').textContent = topic;
     var guestText = '';
     if (guestName && guestRole && guestCountry) {
@@ -301,6 +417,65 @@ function playPodcast(id, topic, guestName, guestCountry, guestRole) {
     document.getElementById('player-expert').textContent = guestText;
     showScreen('player');
     loadAudio('/api/audio/' + id);
+}
+
+/* ===== SHARE PODCAST ===== */
+function sharePodcast() {
+    var topic = document.getElementById('player-topic').textContent;
+    var url = window.location.origin + '/api/audio/' + state.jobId;
+
+    // Try native share API first (mobile)
+    if (navigator.share) {
+        navigator.share({
+            title: 'El Rincon de Klaus: ' + topic,
+            text: 'Escucha este podcast sobre ' + topic,
+            url: url
+        }).catch(function() {
+            copyToClipboard(url);
+        });
+    } else {
+        copyToClipboard(url);
+    }
+}
+
+function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function() {
+            showShareToast();
+        }).catch(function() {
+            fallbackCopy(text);
+        });
+    } else {
+        fallbackCopy(text);
+    }
+}
+
+function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+        document.execCommand('copy');
+        showShareToast();
+    } catch (e) {
+        showToast('No se pudo copiar el enlace', 'error');
+    }
+    document.body.removeChild(ta);
+}
+
+function showShareToast() {
+    var toast = document.getElementById('share-toast');
+    if (!toast) return;
+    toast.style.display = 'block';
+    toast.style.animation = 'none';
+    toast.offsetHeight;
+    toast.style.animation = 'toastIn 0.3s ease';
+    setTimeout(function() {
+        toast.style.display = 'none';
+    }, 2500);
 }
 
 /* ===== GO HOME ===== */
@@ -362,6 +537,40 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             generatePodcast();
+        }
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Skip if typing in an input field
+        var tag = e.target.tagName.toLowerCase();
+        if (tag === 'input' || tag === 'textarea') return;
+
+        if (e.code === 'Space' && state.screen === 'player') {
+            e.preventDefault();
+            togglePlay();
+        }
+
+        // Arrow keys for seeking and volume on player screen
+        if (state.screen === 'player' && typeof audio !== 'undefined' && audio.duration) {
+            if (e.code === 'ArrowLeft') {
+                e.preventDefault();
+                audio.currentTime = Math.max(0, audio.currentTime - 10);
+            }
+            if (e.code === 'ArrowRight') {
+                e.preventDefault();
+                audio.currentTime = Math.min(audio.duration, audio.currentTime + 10);
+            }
+            if (e.code === 'ArrowUp') {
+                e.preventDefault();
+                audio.volume = Math.min(1, audio.volume + 0.1);
+                if (typeof updateVolumeUI === 'function') updateVolumeUI();
+            }
+            if (e.code === 'ArrowDown') {
+                e.preventDefault();
+                audio.volume = Math.max(0, audio.volume - 0.1);
+                if (typeof updateVolumeUI === 'function') updateVolumeUI();
+            }
         }
     });
 });

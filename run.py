@@ -12,24 +12,33 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-# Set ffmpeg path from imageio_ffmpeg if system ffmpeg not found
+# Set ffmpeg path if system ffmpeg not found
 if not shutil.which("ffmpeg"):
     try:
-        import imageio_ffmpeg
-        ffmpeg_dir = os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
-        os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ.get("PATH", "")
+        import static_ffmpeg
+        static_ffmpeg.add_paths()
     except ImportError:
-        pass
+        try:
+            import imageio_ffmpeg
+            ffmpeg_dir = os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
+            os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ.get("PATH", "")
+        except ImportError:
+            pass
 
 
 def check_requirements():
     if not shutil.which("ffmpeg"):
         try:
-            import imageio_ffmpeg
-            print("  [OK] ffmpeg (via imageio-ffmpeg)")
+            import static_ffmpeg
+            static_ffmpeg.add_paths()
+            print("  [OK] ffmpeg (via static-ffmpeg)")
         except ImportError:
-            print("  [ERROR] ffmpeg no encontrado. Instala: pip install imageio-ffmpeg")
-            sys.exit(1)
+            try:
+                import imageio_ffmpeg
+                print("  [OK] ffmpeg (via imageio-ffmpeg)")
+            except ImportError:
+                print("  [ERROR] ffmpeg no encontrado. Instala: pip install static-ffmpeg")
+                sys.exit(1)
     else:
         print("  [OK] ffmpeg")
 

@@ -12,6 +12,11 @@ router = APIRouter()
 from backend.agents.orchestrator import jobs, generate_podcast
 
 
+@router.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 @router.post("/generate")
 async def start_generation(req: PodcastRequest, background_tasks: BackgroundTasks):
     job_id = uuid4().hex[:8]

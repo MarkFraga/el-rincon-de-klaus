@@ -1,4 +1,5 @@
-const CACHE_NAME = 'klaus-v1';
+const CACHE_VERSION = 2;
+const CACHE_NAME = 'klaus-v' + CACHE_VERSION;
 const APP_SHELL = [
     '/',
     '/index.html',
@@ -7,7 +8,8 @@ const APP_SHELL = [
     '/js/audio-player.js',
     '/manifest.json',
     '/assets/icon-192.png',
-    '/assets/icon-512.png'
+    '/assets/icon-512.png',
+    '/assets/klaus-avatar.png'
 ];
 
 self.addEventListener('install', (event) => {

@@ -11,12 +11,6 @@ from backend.config import BASE_DIR
 
 app = FastAPI(title="El Rincon de Klaus")
 
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
-
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
