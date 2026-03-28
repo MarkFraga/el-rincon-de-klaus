@@ -86,7 +86,10 @@ async def generate_podcast(topic: str, job_id: str) -> None:
         job.audio_generation = AgentStatus.RUNNING
         pipeline = AudioPipeline(job_id)
         expert_voice_id = script_result.get("expert_voice_id", "es-MX-JorgeNeural")
-        audio_path = await pipeline.generate(script_result["script"], expert_voice_id)
+        expert_post_process = script_result.get("expert_post_process", None)
+        audio_path = await pipeline.generate(
+            script_result["script"], expert_voice_id, expert_post_process
+        )
         job.audio_generation = AgentStatus.DONE
         job.audio_url = f"/api/audio/{job_id}"
         job.progress_pct = 100

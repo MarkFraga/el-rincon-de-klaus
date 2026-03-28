@@ -15,22 +15,10 @@ BASE_DIR = Path(__file__).parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-KLAUS_VOICE = "es-ES-AlvaroNeural"
-KLAUS_RATE = "+8%"
-KLAUS_PITCH = "+3Hz"
-
-EXPERT_VOICES = [
-    {"voice_id": "es-MX-JorgeNeural", "name": "Jorge", "country": "México"},
-    {"voice_id": "es-AR-TomasNeural", "name": "Tomás", "country": "Argentina"},
-    {"voice_id": "es-CO-GonzaloNeural", "name": "Gonzalo", "country": "Colombia"},
-    {"voice_id": "es-CL-LorenzoNeural", "name": "Lorenzo", "country": "Chile"},
-    {"voice_id": "es-CU-ManuelNeural", "name": "Manuel", "country": "Cuba"},
-    {"voice_id": "es-PE-AlexNeural", "name": "Alex", "country": "Perú"},
-]
-
+# Emotion-to-prosody mapping for TTS
 EMOTION_PROSODY = {
     "neutral":     {"rate": "+0%",  "pitch": "+0Hz"},
-    "excited":     {"rate": "+10%", "pitch": "+2Hz"},
-    "thoughtful":  {"rate": "-5%",  "pitch": "-1Hz"},
+    "excited":     {"rate": "+12%", "pitch": "+2Hz"},
+    "thoughtful":  {"rate": "-8%",  "pitch": "-1Hz"},
     "challenging": {"rate": "+5%",  "pitch": "+1Hz"},
 }

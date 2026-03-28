@@ -9,7 +9,8 @@ from typing import Any
 from google import genai
 
 from backend.agents.base_agent import BaseAgent
-from backend.config import GEMINI_API_KEY, GEMINI_MODEL, EXPERT_VOICES
+from backend.config import GEMINI_API_KEY, GEMINI_MODEL
+from backend.audio.voice_profiles import EXPERT_VOICES, get_expert_profile
 
 logger = logging.getLogger(__name__)
 
@@ -31,16 +32,18 @@ class OrganizerAgent(BaseAgent):
     ) -> dict:
         await self.report("Seleccionando experto y compilando investigación...", progress=52)
 
-        expert = self._pick_expert(topic)
+        expert = get_expert_profile(topic)
         expert_name = expert["name"]
         expert_country = expert["country"]
         expert_voice_id = expert["voice_id"]
+        expert_post_process = expert.get("post_process", None)
+        expert_gender = expert.get("gender", "male")
 
         research_text = self._compile_research(web_result, academic_result, deep_result)
 
         await self.report("Generando guión del podcast con Gemini...", progress=58)
 
-        prompt = self._build_prompt(topic, expert_name, expert_country, research_text)
+        prompt = self._build_prompt(topic, expert_name, expert_country, research_text, expert_gender)
 
         script = await self._generate_script(prompt, topic, expert_name, expert_country, research_text)
 
@@ -54,6 +57,7 @@ class OrganizerAgent(BaseAgent):
             "expert_name": expert_name,
             "expert_country": expert_country,
             "expert_voice_id": expert_voice_id,
+            "expert_post_process": expert_post_process,
         }
 
     # ------------------------------------------------------------------
@@ -109,12 +113,15 @@ class OrganizerAgent(BaseAgent):
         expert_name: str,
         expert_country: str,
         research_text: str,
+        expert_gender: str = "male",
     ) -> str:
-        return f"""Eres un guionista profesional de podcasts. Escribe el guión completo para un episodio de "EL RINCÓN DE KLAUS".
+        gender_word = "Experto" if expert_gender == "male" else "Experta"
+        pronoun = "el" if expert_gender == "male" else "ella"
+        return f"""Eres un guionista profesional de podcasts. Escribe el guion completo para un episodio de "EL RINCON DE KLAUS".
 
 PERSONAJES:
-- KLAUS: Presentador del podcast. Carismático, curioso, a veces escéptico. Hace preguntas difíciles y provoca al invitado. Habla con confianza.
-- {expert_name} (de {expert_country}): Experto/a mundial en {topic}. Apasionado/a, usa datos concretos, cita papers específicos. A veces discrepa con Klaus.
+- KLAUS: Presentador del podcast. Un hombre mayor, con voz ronca pero audaz y carismatica. Curioso, esceptico, provocador. Hace preguntas dificiles. Habla con la confianza de alguien que ha visto mucho mundo. Usa expresiones como "a ver, a ver", "espera espera", "esto me fascina".
+- {expert_name} (de {expert_country}): {gender_word} mundial en {topic}. Apasionado/a, usa datos concretos, cita papers especificos. A veces discrepa con Klaus. Tiene acento de {expert_country}.
 
 REGLAS DEL GUION (MUY IMPORTANTE - SEGUIR TODAS):
 1. Es un DEBATE REAL y EXTENSO, no un monologo. Se interrumpen, se cuestionan, construyen sobre las ideas del otro.
