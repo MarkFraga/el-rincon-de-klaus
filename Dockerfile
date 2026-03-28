@@ -1,7 +1,7 @@
 FROM python:3.10-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
+    apt-get install -y --no-install-recommends ffmpeg curl && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -13,9 +13,9 @@ COPY . .
 
 RUN mkdir -p output
 
-# Render sets PORT env var; default to 10000 (Render's default)
-ENV PORT=10000
-EXPOSE ${PORT}
+# Verify imports work at build time
+RUN python -c "from backend.app import app; print('Import OK')"
 
-# Use shell form so $PORT is expanded at runtime
-CMD sh -c "uvicorn backend.app:app --host 0.0.0.0 --port $PORT"
+ENV PORT=10000
+
+CMD ["sh", "-c", "exec uvicorn backend.app:app --host 0.0.0.0 --port ${PORT}"]
