@@ -31,7 +31,13 @@ class OrganizerAgent(BaseAgent):
     ) -> dict:
         await self.report("Compilando investigacion y preparando guion...", progress=52)
 
-        if guest_profile is None:
+        # Convert GuestProfile dataclass to dict if needed
+        if hasattr(guest_profile, "to_dict"):
+            guest_profile = guest_profile.to_dict()
+        elif hasattr(guest_profile, "__dataclass_fields__"):
+            from dataclasses import asdict
+            guest_profile = asdict(guest_profile)
+        elif guest_profile is None:
             guest_profile = {
                 "full_name": "Invitado Anonimo",
                 "country": "Desconocido",
