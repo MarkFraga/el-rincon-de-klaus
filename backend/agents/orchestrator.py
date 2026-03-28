@@ -109,15 +109,14 @@ async def generate_podcast(topic: str, job_id: str) -> None:
         logger.info("Research results: web=%d, academic=%d, deep=%d (total=%d)",
                      web_count, acad_count, deep_count, total_sources)
 
-        # ── Retry once if below minimum threshold ──
-        if total_sources < MIN_RESEARCH_SOURCES:
+        # ── Retry once ONLY if ALL agents returned 0 sources ──
+        if total_sources == 0:
             logger.warning(
-                "Total sources (%d) below threshold (%d), retrying web search...",
-                total_sources, MIN_RESEARCH_SOURCES,
+                "ALL research agents returned 0 sources, retrying web search...",
             )
             await ws_manager.broadcast(job_id, {
                 "agent": "web_search", "status": "running",
-                "message": "Pocas fuentes, reintentando busqueda...", "progress": 30,
+                "message": "Sin fuentes, reintentando busqueda...", "progress": 30,
             })
 
             try:
@@ -140,6 +139,12 @@ async def generate_podcast(topic: str, job_id: str) -> None:
                     logger.info("After retry: web=%d, total=%d", web_count, total_sources)
             except Exception as retry_exc:
                 logger.warning("Retry web search failed: %s", retry_exc)
+        elif total_sources < MIN_RESEARCH_SOURCES:
+            logger.warning(
+                "Total sources (%d) below ideal threshold (%d) but some agents "
+                "returned data -- skipping retry to save time.",
+                total_sources, MIN_RESEARCH_SOURCES,
+            )
 
         job.agent_web = AgentStatus.DONE
         job.agent_academic = AgentStatus.DONE

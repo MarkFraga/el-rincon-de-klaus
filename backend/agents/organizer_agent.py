@@ -233,32 +233,58 @@ IMPORTANTE: Devuelve SOLO el JSON array, sin texto adicional, sin ```json, sin e
         guest_profile: dict[str, Any],
         research_text: str,
     ) -> list[dict[str, str]]:
-        """Call Gemini and parse the script JSON, with retries on failure."""
+        """Call Gemini and parse the script JSON, with retries and model fallback."""
         import asyncio
 
-        for attempt in range(3):
-            try:
-                if attempt > 0:
-                    wait_secs = 30 * attempt
-                    await self.report(f"Reintentando en {wait_secs}s (intento {attempt+1}/3)...", progress=63)
-                    await asyncio.sleep(wait_secs)
-                    prompt = self._build_strict_retry_prompt(topic, guest_profile, research_text)
+        # Try primary model first, then fall back to alternatives on quota errors
+        models_to_try = [
+            GEMINI_MODEL,
+            "gemini-2.0-flash",
+            "gemini-2.5-flash-lite",
+        ]
 
-                response = await asyncio.to_thread(
-                    self._client.models.generate_content,
-                    model=GEMINI_MODEL,
-                    contents=prompt,
-                )
-                raw = response.text.strip()
-                return self._parse_script(raw)
+        last_exc = None
+        for model_idx, model_name in enumerate(models_to_try):
+            for attempt in range(2):
+                try:
+                    current_prompt = prompt
+                    if attempt > 0 or model_idx > 0:
+                        wait_secs = 5 if model_idx > 0 else 30
+                        await self.report(
+                            f"Intentando modelo {model_name} (intento {attempt+1})...",
+                            progress=60 + model_idx * 2,
+                        )
+                        if attempt > 0:
+                            await asyncio.sleep(wait_secs)
+                        current_prompt = self._build_strict_retry_prompt(
+                            topic, guest_profile, research_text
+                        )
 
-            except Exception as exc:
-                logger.warning("Script generation attempt %d failed: %s", attempt + 1, exc)
-                if attempt == 2:
-                    raise RuntimeError(f"No se pudo generar el guion tras 3 intentos: {exc}") from exc
+                    response = await asyncio.to_thread(
+                        self._client.models.generate_content,
+                        model=model_name,
+                        contents=current_prompt,
+                    )
+                    raw = response.text.strip()
+                    return self._parse_script(raw)
 
-        # Unreachable, but satisfies the type checker
-        raise RuntimeError("No se pudo generar el guion.")
+                except Exception as exc:
+                    last_exc = exc
+                    exc_str = str(exc)
+                    logger.warning(
+                        "Script generation with %s attempt %d failed: %s",
+                        model_name, attempt + 1, exc_str[:200],
+                    )
+                    # If quota exceeded, skip remaining attempts for this model
+                    if "RESOURCE_EXHAUSTED" in exc_str or "429" in exc_str:
+                        logger.info(
+                            "Quota exhausted for %s, trying next model...", model_name
+                        )
+                        break
+
+        raise RuntimeError(
+            f"No se pudo generar el guion tras probar {len(models_to_try)} modelos: {last_exc}"
+        ) from last_exc
 
     # ------------------------------------------------------------------
     @staticmethod
@@ -324,7 +350,7 @@ Dinamica: {dynamic_desc}.
 MINIMO 55-75 intercambios. Cada intervencion debe ser LARGA (3-5 frases minimo). Debate real con desacuerdos, datos especificos y reacciones naturales. Cubre el tema en profundidad.
 
 Investigacion disponible:
-{research_text[:12000]}
+{research_text[:60000]}
 
 FORMATO OBLIGATORIO (solo esto, nada mas):
 [

@@ -133,13 +133,26 @@ Responde SOLO con un JSON valido (sin markdown, sin texto extra):
   "speaking_style": "como habla esta persona, 1 frase breve"
 }}"""
 
-    response = await asyncio.to_thread(
-        client.models.generate_content,
-        model=GEMINI_MODEL,
-        contents=prompt,
-    )
+    # Try primary model, fall back to alternatives on quota errors
+    models_to_try = [GEMINI_MODEL, "gemini-2.0-flash", "gemini-2.5-flash-lite"]
+    raw = None
+    for model_name in models_to_try:
+        try:
+            response = await asyncio.to_thread(
+                client.models.generate_content,
+                model=model_name,
+                contents=prompt,
+            )
+            raw = response.text.strip()
+            break
+        except Exception as exc:
+            exc_str = str(exc)
+            logger.warning("Guest generation with %s failed: %s", model_name, exc_str[:150])
+            if "RESOURCE_EXHAUSTED" not in exc_str and "429" not in exc_str:
+                raise  # Non-quota error, don't try other models
 
-    raw = response.text.strip()
+    if raw is None:
+        raise RuntimeError("All Gemini models exhausted for guest generation")
 
     # Parse JSON
     try:

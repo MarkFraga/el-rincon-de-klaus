@@ -12,7 +12,9 @@ from backend.agents.base_agent import BaseAgent
 
 logger = logging.getLogger(__name__)
 
-_TIMEOUT = 20
+_TIMEOUT = 25
+_MAX_RETRIES = 2
+_RETRY_DELAY = 2  # seconds between retries
 
 
 class AcademicAgent(BaseAgent):
@@ -21,44 +23,86 @@ class AcademicAgent(BaseAgent):
     def __init__(self, job_id: str):
         super().__init__(name="academic", job_id=job_id)
 
+    async def _call_with_retry(
+        self,
+        func,
+        client: httpx.AsyncClient,
+        query: str,
+        api_name: str,
+        query_index: int,
+    ) -> list[dict[str, Any]]:
+        """Call an API function with retry logic and timeout handling."""
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                result = await asyncio.wait_for(
+                    func(client, query),
+                    timeout=_TIMEOUT + 5,  # slightly above httpx timeout
+                )
+                return result
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "%s query %d timed out (attempt %d/%d)",
+                    api_name, query_index, attempt, _MAX_RETRIES,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "%s query %d failed (attempt %d/%d): %s",
+                    api_name, query_index, attempt, _MAX_RETRIES, exc,
+                )
+            if attempt < _MAX_RETRIES:
+                await asyncio.sleep(_RETRY_DELAY)
+        return []
+
     async def run(self, topic: str) -> dict:
         await self.report("Buscando papers academicos en multiples fuentes...", progress=5)
 
         # Generate multiple query variations for broader coverage
         query_variations = self._build_query_variations(topic)
         papers: list[dict[str, Any]] = []
+        arxiv_total = 0
+        ss_total = 0
+        cr_total = 0
 
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
             # Search arXiv with multiple queries
             await self.report("Buscando en arXiv (multiples queries)...", progress=8)
             for i, q in enumerate(query_variations[:4]):
-                try:
-                    result = await self._search_arxiv(client, q)
-                    papers.extend(result)
-                    await self.report(f"arXiv query {i+1}/4: {len(result)} papers", progress=8 + i * 3)
-                except Exception as exc:
-                    logger.warning("arXiv query %d failed: %s", i, exc)
+                result = await self._call_with_retry(
+                    self._search_arxiv, client, q, "arXiv", i + 1,
+                )
+                papers.extend(result)
+                arxiv_total += len(result)
+                await self.report(f"arXiv query {i+1}/4: {len(result)} papers", progress=8 + i * 3)
+
+            logger.info("arXiv total: %d papers", arxiv_total)
+            await self.report(f"arXiv completado: {arxiv_total} papers encontrados.", progress=20)
 
             # Search Semantic Scholar with multiple queries
             await self.report("Buscando en Semantic Scholar...", progress=22)
             for i, q in enumerate(query_variations[:3]):
-                try:
-                    result = await self._search_semantic_scholar(client, q)
-                    papers.extend(result)
-                    await self.report(f"Semantic Scholar query {i+1}/3: {len(result)} papers", progress=22 + i * 3)
-                except Exception as exc:
-                    logger.warning("Semantic Scholar query %d failed: %s", i, exc)
+                result = await self._call_with_retry(
+                    self._search_semantic_scholar, client, q, "SemanticScholar", i + 1,
+                )
+                papers.extend(result)
+                ss_total += len(result)
+                await self.report(f"Semantic Scholar query {i+1}/3: {len(result)} papers", progress=22 + i * 3)
                 await asyncio.sleep(1)  # rate limit
+
+            logger.info("Semantic Scholar total: %d papers", ss_total)
+            await self.report(f"Semantic Scholar completado: {ss_total} papers encontrados.", progress=30)
 
             # CrossRef with multiple queries
             await self.report("Buscando en CrossRef...", progress=32)
             for i, q in enumerate(query_variations[:3]):
-                try:
-                    result = await self._search_crossref(client, q)
-                    papers.extend(result)
-                    await self.report(f"CrossRef query {i+1}/3: {len(result)} papers", progress=32 + i * 3)
-                except Exception as exc:
-                    logger.warning("CrossRef query %d failed: %s", i, exc)
+                result = await self._call_with_retry(
+                    self._search_crossref, client, q, "CrossRef", i + 1,
+                )
+                papers.extend(result)
+                cr_total += len(result)
+                await self.report(f"CrossRef query {i+1}/3: {len(result)} papers", progress=32 + i * 3)
+
+            logger.info("CrossRef total: %d papers", cr_total)
+            await self.report(f"CrossRef completado: {cr_total} papers encontrados.", progress=40)
 
         papers = self._deduplicate(papers)
 
@@ -67,7 +111,15 @@ class AcademicAgent(BaseAgent):
             for p in papers
         )
 
-        await self.report(f"Busqueda academica completada: {len(papers)} papers unicos.", progress=45)
+        logger.info(
+            "Academic search complete: arXiv=%d, SemanticScholar=%d, CrossRef=%d, unique=%d",
+            arxiv_total, ss_total, cr_total, len(papers),
+        )
+        await self.report(
+            f"Busqueda academica completada: {len(papers)} papers unicos "
+            f"(arXiv: {arxiv_total}, SS: {ss_total}, CrossRef: {cr_total}).",
+            progress=45,
+        )
         return {"papers": papers, "summary": summary}
 
     @staticmethod
@@ -82,7 +134,7 @@ class AcademicAgent(BaseAgent):
 
     async def _search_arxiv(self, client: httpx.AsyncClient, topic: str) -> list[dict[str, Any]]:
         encoded = quote_plus(topic)
-        url = f"http://export.arxiv.org/api/query?search_query=all:{encoded}&max_results=20&sortBy=relevance"
+        url = f"https://export.arxiv.org/api/query?search_query=all:{encoded}&max_results=20&sortBy=relevance"
         resp = await client.get(url)
         resp.raise_for_status()
 
