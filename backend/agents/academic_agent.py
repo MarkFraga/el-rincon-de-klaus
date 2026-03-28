@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import xml.etree.ElementTree as ET
 from typing import Any
@@ -11,65 +12,77 @@ from backend.agents.base_agent import BaseAgent
 
 logger = logging.getLogger(__name__)
 
-_TIMEOUT = 15  # seconds
+_TIMEOUT = 20
 
 
 class AcademicAgent(BaseAgent):
-    """Agent 3 -- searches arXiv, Semantic Scholar and CrossRef."""
+    """Agent 3 -- massive academic search across arXiv, Semantic Scholar and CrossRef."""
 
     def __init__(self, job_id: str):
         super().__init__(name="academic", job_id=job_id)
 
-    # ------------------------------------------------------------------
     async def run(self, topic: str) -> dict:
-        await self.report("Buscando papers académicos...", progress=5)
+        await self.report("Buscando papers academicos en multiples fuentes...", progress=5)
 
+        # Generate multiple query variations for broader coverage
+        query_variations = self._build_query_variations(topic)
         papers: list[dict[str, Any]] = []
 
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            arxiv_task = self._search_arxiv(client, topic)
-            ss_task = self._search_semantic_scholar(client, topic)
-            cr_task = self._search_crossref(client, topic)
+            # Search arXiv with multiple queries
+            await self.report("Buscando en arXiv (multiples queries)...", progress=8)
+            for i, q in enumerate(query_variations[:4]):
+                try:
+                    result = await self._search_arxiv(client, q)
+                    papers.extend(result)
+                    await self.report(f"arXiv query {i+1}/4: {len(result)} papers", progress=8 + i * 3)
+                except Exception as exc:
+                    logger.warning("arXiv query %d failed: %s", i, exc)
 
-            results = await __import__("asyncio").gather(
-                arxiv_task, ss_task, cr_task, return_exceptions=True
-            )
+            # Search Semantic Scholar with multiple queries
+            await self.report("Buscando en Semantic Scholar...", progress=22)
+            for i, q in enumerate(query_variations[:3]):
+                try:
+                    result = await self._search_semantic_scholar(client, q)
+                    papers.extend(result)
+                    await self.report(f"Semantic Scholar query {i+1}/3: {len(result)} papers", progress=22 + i * 3)
+                except Exception as exc:
+                    logger.warning("Semantic Scholar query %d failed: %s", i, exc)
+                await asyncio.sleep(1)  # rate limit
 
-        for idx, label in enumerate(["arXiv", "Semantic Scholar", "CrossRef"]):
-            if isinstance(results[idx], list):
-                papers.extend(results[idx])
-                await self.report(
-                    f"{label}: {len(results[idx])} resultados", progress=15 + idx * 10
-                )
-            else:
-                logger.warning("%s search failed: %s", label, results[idx])
-                await self.report(f"{label}: sin resultados (error)", progress=15 + idx * 10)
+            # CrossRef with multiple queries
+            await self.report("Buscando en CrossRef...", progress=32)
+            for i, q in enumerate(query_variations[:3]):
+                try:
+                    result = await self._search_crossref(client, q)
+                    papers.extend(result)
+                    await self.report(f"CrossRef query {i+1}/3: {len(result)} papers", progress=32 + i * 3)
+                except Exception as exc:
+                    logger.warning("CrossRef query %d failed: %s", i, exc)
 
-        # Deduplicate by normalised title
         papers = self._deduplicate(papers)
 
         summary = "\n\n".join(
-            f"- [{p['title']}] ({p.get('year', '?')}): {p.get('abstract', '')[:500]}"
+            f"- [{p['title']}] ({p.get('year', '?')}): {p.get('abstract', '')[:800]}"
             for p in papers
         )
 
-        await self.report(
-            f"Búsqueda académica completada: {len(papers)} papers.", progress=45
-        )
-
+        await self.report(f"Busqueda academica completada: {len(papers)} papers unicos.", progress=45)
         return {"papers": papers, "summary": summary}
 
-    # ------------------------------------------------------------------
-    # arXiv
-    # ------------------------------------------------------------------
-    async def _search_arxiv(
-        self, client: httpx.AsyncClient, topic: str
-    ) -> list[dict[str, Any]]:
+    @staticmethod
+    def _build_query_variations(topic: str) -> list[str]:
+        return [
+            topic,
+            f"{topic} review",
+            f"{topic} recent advances",
+            f"{topic} meta-analysis",
+            f"{topic} experimental results",
+        ]
+
+    async def _search_arxiv(self, client: httpx.AsyncClient, topic: str) -> list[dict[str, Any]]:
         encoded = quote_plus(topic)
-        url = (
-            f"http://export.arxiv.org/api/query"
-            f"?search_query=all:{encoded}&max_results=8&sortBy=relevance"
-        )
+        url = f"http://export.arxiv.org/api/query?search_query=all:{encoded}&max_results=20&sortBy=relevance"
         resp = await client.get(url)
         resp.raise_for_status()
 
@@ -104,16 +117,11 @@ class AcademicAgent(BaseAgent):
 
         return papers
 
-    # ------------------------------------------------------------------
-    # Semantic Scholar
-    # ------------------------------------------------------------------
-    async def _search_semantic_scholar(
-        self, client: httpx.AsyncClient, topic: str
-    ) -> list[dict[str, Any]]:
+    async def _search_semantic_scholar(self, client: httpx.AsyncClient, topic: str) -> list[dict[str, Any]]:
         encoded = quote_plus(topic)
         url = (
             f"https://api.semanticscholar.org/graph/v1/paper/search"
-            f"?query={encoded}&limit=8"
+            f"?query={encoded}&limit=20"
             f"&fields=title,abstract,authors,year,citationCount,url,externalIds"
         )
         resp = await client.get(url)
@@ -141,16 +149,11 @@ class AcademicAgent(BaseAgent):
 
         return papers
 
-    # ------------------------------------------------------------------
-    # CrossRef
-    # ------------------------------------------------------------------
-    async def _search_crossref(
-        self, client: httpx.AsyncClient, topic: str
-    ) -> list[dict[str, Any]]:
+    async def _search_crossref(self, client: httpx.AsyncClient, topic: str) -> list[dict[str, Any]]:
         encoded = quote_plus(topic)
         url = (
             f"https://api.crossref.org/works"
-            f"?query={encoded}&rows=5"
+            f"?query={encoded}&rows=15"
             f"&select=DOI,title,author,published-print,abstract"
         )
         resp = await client.get(url)
@@ -185,7 +188,6 @@ class AcademicAgent(BaseAgent):
 
         return papers
 
-    # ------------------------------------------------------------------
     @staticmethod
     def _deduplicate(papers: list[dict[str, Any]]) -> list[dict[str, Any]]:
         seen: set[str] = set()

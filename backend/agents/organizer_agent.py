@@ -71,33 +71,33 @@ class OrganizerAgent(BaseAgent):
     ) -> str:
         sections: list[str] = []
 
-        # Web sources
+        # Web sources - use ALL available
         web_sources = web.get("sources", [])
         if web_sources:
             lines = ["=== FUENTES WEB ==="]
-            for s in web_sources[:12]:
-                lines.append(f"\n### {s.get('title', '')}\nURL: {s.get('url', '')}\n{s.get('content', '')[:1500]}")
+            for s in web_sources[:30]:
+                lines.append(f"\n### {s.get('title', '')}\nURL: {s.get('url', '')}\n{s.get('content', '')[:2500]}")
             sections.append("\n".join(lines))
 
-        # Academic papers
+        # Academic papers - use ALL available
         papers = academic.get("papers", [])
         if papers:
-            lines = ["=== PAPERS ACADÉMICOS ==="]
-            for p in papers[:12]:
+            lines = ["=== PAPERS ACADEMICOS ==="]
+            for p in papers[:40]:
                 lines.append(
                     f"\n### {p.get('title', '')} ({p.get('year', '?')})"
                     f"\nAutores: {p.get('authors', 'N/A')}"
                     f"\nFuente: {p.get('source', 'N/A')}"
-                    f"\n{p.get('abstract', '')[:1000]}"
+                    f"\n{p.get('abstract', '')[:1200]}"
                 )
             sections.append("\n".join(lines))
 
-        # Deep/obscure sources
+        # Deep/obscure sources - use ALL available
         deep_sources = deep.get("sources", [])
         if deep_sources:
-            lines = ["=== INVESTIGACIÓN PROFUNDA ==="]
-            for s in deep_sources[:10]:
-                lines.append(f"\n### {s.get('title', '')}\nURL: {s.get('url', '')}\n{s.get('content', '')[:1500]}")
+            lines = ["=== INVESTIGACION PROFUNDA ==="]
+            for s in deep_sources[:25]:
+                lines.append(f"\n### {s.get('title', '')}\nURL: {s.get('url', '')}\n{s.get('content', '')[:2500]}")
             sections.append("\n".join(lines))
 
         return "\n\n".join(sections) if sections else "No se encontró investigación relevante."
@@ -116,17 +116,21 @@ PERSONAJES:
 - KLAUS: Presentador del podcast. Carismático, curioso, a veces escéptico. Hace preguntas difíciles y provoca al invitado. Habla con confianza.
 - {expert_name} (de {expert_country}): Experto/a mundial en {topic}. Apasionado/a, usa datos concretos, cita papers específicos. A veces discrepa con Klaus.
 
-REGLAS DEL GUIÓN:
-1. Es un DEBATE REAL, no un monólogo. Se interrumpen, se cuestionan, construyen sobre las ideas del otro.
-2. KLAUS hace al menos 4 preguntas genuinamente difíciles que el experto debe esforzarse en responder.
-3. El experto cita al menos 5 datos específicos o papers de la investigación proporcionada.
-4. Incluye momentos de desacuerdo que se resuelven con argumentos.
-5. Incluye al menos un momento "espera, eso lo cambia todo" o similar.
-6. El diálogo debe sentirse NATURAL: incluye reacciones ("hmm", "exacto", "pero espera...", "a ver a ver", "increíble").
-7. Klaus SIEMPRE abre con una intro enganchante sobre el tema y presenta al invitado.
-8. Termina con una conclusión sorprendente o una pregunta abierta que deje pensando.
-9. Duración: 25-35 intercambios (para ~15 minutos de audio).
-10. NO uses marcadores como [PAUSA] o [MÚSICA]. Solo diálogo puro.
+REGLAS DEL GUION (MUY IMPORTANTE - SEGUIR TODAS):
+1. Es un DEBATE REAL y EXTENSO, no un monologo. Se interrumpen, se cuestionan, construyen sobre las ideas del otro.
+2. KLAUS hace al menos 8 preguntas genuinamente dificiles que el experto debe esforzarse en responder.
+3. El experto cita al menos 10 datos especificos, estudios o papers de la investigacion proporcionada con nombres de autores y fechas.
+4. Incluye MULTIPLES momentos de desacuerdo que se resuelven con argumentos detallados.
+5. Incluye al menos 2 momentos "espera, eso lo cambia todo" o revelaciones sorprendentes.
+6. El dialogo debe sentirse MUY NATURAL: incluye reacciones largas ("hmm, dejame pensar...", "exacto, pero mira...", "pero espera un momento...", "a ver a ver, esto es importante", "increible, no tenia idea").
+7. Klaus SIEMPRE abre con una intro larga y enganchante sobre el tema (minimo 4-5 frases) y presenta al invitado con entusiasmo.
+8. Desarrolla CADA subtema en profundidad antes de pasar al siguiente. No resumas, EXPLICA con detalle.
+9. Cada respuesta del experto debe ser LARGA y detallada (minimo 3-4 frases por intervencion). No respuestas cortas.
+10. Cada intervencion de Klaus tambien debe ser sustancial: reacciona, comenta, anade contexto, y luego pregunta.
+11. Termina con una conclusion extensa y una pregunta abierta que deje pensando.
+12. DURACION OBLIGATORIA: entre 55 y 75 intercambios. Esto es CRITICO para alcanzar 20+ minutos de audio.
+13. NO uses marcadores como [PAUSA] o [MUSICA]. Solo dialogo puro.
+14. Cubre TODOS los angulos del tema: historia, ciencia actual, controversias, futuro, impacto social, datos sorprendentes.
 
 DATOS DE INVESTIGACIÓN:
 {research_text}
@@ -226,11 +230,11 @@ IMPORTANTE: Devuelve SOLO el JSON array, sin texto adicional, sin ```json, sin e
     ) -> str:
         return f"""INSTRUCCIÓN ESTRICTA: Genera ÚNICAMENTE un JSON array válido. Sin texto antes ni después.
 
-Genera un guión de podcast entre KLAUS (presentador) y {expert_name} (de {expert_country}, experto en {topic}).
-25-35 intercambios. Debate real con desacuerdos, datos específicos y reacciones naturales.
+Genera un guion de podcast LARGO entre KLAUS (presentador) y {expert_name} (de {expert_country}, experto en {topic}).
+MINIMO 55-75 intercambios. Cada intervencion debe ser LARGA (3-5 frases minimo). Debate real con desacuerdos, datos especificos y reacciones naturales. Cubre el tema en profundidad.
 
-Investigación disponible:
-{research_text[:8000]}
+Investigacion disponible:
+{research_text[:12000]}
 
 FORMATO OBLIGATORIO (solo esto, nada más):
 [
