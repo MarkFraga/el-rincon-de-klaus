@@ -20,14 +20,13 @@ TTS_BACKEND = os.getenv("TTS_BACKEND", "edge")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 
 # Emotion-to-prosody mapping for TTS
-# Rates boosted for dynamic, natural-sounding conversation (not slow lecture)
 EMOTION_PROSODY = {
-    "neutral":     {"rate": "+5%",  "pitch": "+0Hz"},
-    "excited":     {"rate": "+18%", "pitch": "+2Hz"},
-    "thoughtful":  {"rate": "-3%",  "pitch": "-1Hz"},
-    "challenging": {"rate": "+10%", "pitch": "+1Hz"},
-    "humorous":    {"rate": "+14%", "pitch": "+1Hz"},
-    "nostalgic":   {"rate": "+0%",  "pitch": "-1Hz"},
-    "surprised":   {"rate": "+20%", "pitch": "+3Hz"},
-    "skeptical":   {"rate": "+3%",  "pitch": "+1Hz"},
+    "neutral":     {"rate": "+0%",  "pitch": "+0Hz"},
+    "excited":     {"rate": "+8%",  "pitch": "+2Hz"},
+    "thoughtful":  {"rate": "-5%",  "pitch": "-1Hz"},
+    "challenging": {"rate": "+4%",  "pitch": "+1Hz"},
+    "humorous":    {"rate": "+6%",  "pitch": "+1Hz"},
+    "nostalgic":   {"rate": "-3%",  "pitch": "-1Hz"},
+    "surprised":   {"rate": "+10%", "pitch": "+3Hz"},
+    "skeptical":   {"rate": "+0%",  "pitch": "+1Hz"},
 }

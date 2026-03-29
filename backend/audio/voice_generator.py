@@ -66,7 +66,7 @@ KLAUS_VOICE_RECIPE = VoiceRecipe(
         "warmth_boost_db": 4,
         "compression": True,
     },
-    speed_multiplier=1.10,  # Klaus speaks 10% faster (energetic)
+    speed_multiplier=1.03,
 )
 
 
@@ -112,7 +112,7 @@ def generate_guest_voice(
             "warmth_boost_db": rng.uniform(0, 2),
             "compression": True,
         }
-        speed = rng.uniform(1.05, 1.12)
+        speed = rng.uniform(1.0, 1.04)
     elif age_range == "senior":
         post_process = {
             "pitch_shift_semitones": rng.choice([-2, -1]),
@@ -120,7 +120,7 @@ def generate_guest_voice(
             "warmth_boost_db": rng.uniform(2, 4),
             "compression": True,
         }
-        speed = rng.uniform(0.97, 1.05)
+        speed = rng.uniform(0.95, 1.0)
     else:  # mid
         post_process = {
             "pitch_shift_semitones": rng.choice([-1, 0, 1]),
@@ -128,7 +128,7 @@ def generate_guest_voice(
             "warmth_boost_db": rng.uniform(1, 3),
             "compression": True,
         }
-        speed = rng.uniform(1.02, 1.08)
+        speed = rng.uniform(0.98, 1.03)
 
     recipe = VoiceRecipe(
         voice_a=voice_a,

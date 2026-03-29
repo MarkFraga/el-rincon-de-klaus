@@ -79,16 +79,15 @@ class AudioPipeline:
 
             if seg["speaker"] == "KLAUS":
                 voice = klaus_voice
-                base_rate = "+10%"
+                base_rate = "+3%"
                 base_pitch = "-4Hz"
                 seg_post_process = klaus_pp
             else:
                 voice = guest_voice
-                # Apply guest speed multiplier as base rate for Kokoro
                 if use_kokoro and guest_speed_mult != 1.0:
                     base_rate = f"+{int((guest_speed_mult - 1) * 100)}%"
                 else:
-                    base_rate = "+7%"
+                    base_rate = "+0%"
                 base_pitch = "+0Hz"
                 seg_post_process = guest_pp
 
