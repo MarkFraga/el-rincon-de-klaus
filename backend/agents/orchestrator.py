@@ -228,9 +228,32 @@ async def generate_podcast(topic: str, job_id: str) -> None:
             topic_analysis=topic_analysis,
         )
 
+        # ── Phase 2a: Validate script length (minimum 60 segments for 20+ min) ──
+        script = script_result["script"]
+        MIN_SEGMENTS = 60
+
+        if len(script) < MIN_SEGMENTS:
+            logger.warning(
+                "Script too short (%d segments, need %d+). Regenerating...",
+                len(script), MIN_SEGMENTS,
+            )
+            await ws_manager.broadcast(job_id, {
+                "agent": "organizer", "status": "running",
+                "message": f"Guion muy corto ({len(script)} segmentos), regenerando mas largo...",
+                "progress": 62,
+            })
+            # Retry with explicit length enforcement
+            script_result2 = await organizer.run(
+                topic, web_result, academic_result, deep_result, guest_profile,
+                topic_analysis=topic_analysis,
+            )
+            if len(script_result2["script"]) > len(script):
+                script_result = script_result2
+                script = script_result["script"]
+                logger.info("Regenerated script: %d segments", len(script))
+
         # ── Phase 2b: Evaluate and iterate until quality threshold ──
         evaluator = EvaluatorAgent(job_id)
-        script = script_result["script"]
         research_text = organizer._compile_research(web_result, academic_result, deep_result)
 
         for iteration in range(MAX_ITERATIONS):

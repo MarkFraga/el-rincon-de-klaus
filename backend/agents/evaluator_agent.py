@@ -120,6 +120,7 @@ Mejoras solicitadas:
 {improvements}
 
 INSTRUCCION: Reescribe el guion COMPLETO corrigiendo TODOS los problemas senalados. Mantén la misma estructura JSON pero mejora significativamente:
+- CRITICO: el guion debe tener MINIMO 80 intercambios, MAXIMO 120. Cada intervencion minimo 3 frases largas. El podcast debe durar al menos 20 minutos de audio.
 - PRIMERO: asegurate de que CADA segmento habla de "{original_topic}"
 - Si el gancho era debil, reescribe la apertura con algo impactante
 - Si el dialogo era robotico, anade mas naturalidad (muletillas, interrupciones, cambios de idea)

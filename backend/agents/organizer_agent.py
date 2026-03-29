@@ -311,25 +311,25 @@ ACTO 3 - INMERSION (intercambios 16-35):
 >>> RESET DE ATENCION a los ~12 minutos: cambiar de formato (explicacion -> anecdota, serio -> humor, dato -> opinion)
 >>> Abrir LOOP #3: "Pero esto no es lo mas impresionante..."
 
-ACTO 4 - EL PEAK (intercambios 36-45):
+ACTO 4 - EL PEAK (intercambios 36-50):
 - El momento MAS MEMORABLE del episodio (regla Peak-End de Kahneman)
 - Revelacion inesperada que CAMBIA la perspectiva
 - Cerrar LOOP #2
 - Reacciones GENUINAS de asombro
 
-ACTO 5 - IMPLICACIONES (intercambios 46-55):
+ACTO 5 - IMPLICACIONES (intercambios 51-65):
 - "Y esto que significa para ti y para mi?"
 - Conectar el tema con la vida cotidiana del oyente
 - Segundo momento de debate/reflexion
 - Cerrar LOOP #3
 >>> Momento de humor como VALVULA DE PRESION (libera tension sin trivializar)
 
-ACTO 6 - REFLEXION PROFUNDA (intercambios 56-65):
+ACTO 6 - REFLEXION PROFUNDA (intercambios 66-85):
 - Conectar el tema con algo MAS GRANDE (sociedad, humanidad, futuro)
 - Klaus da su OPINION PERSONAL genuina
 - Momento de vulnerabilidad: "La verdad es que yo tampoco se la respuesta a esto"
 
-ACTO 7 - CIERRE MEMORABLE (intercambios 76-85):
+ACTO 7 - CIERRE MEMORABLE (intercambios 86-120):
 - NUNCA "Bueno, pues eso ha sido todo" ni un resumen plano
 - El cierre debe provocar la sensacion "ahora nunca podras ver esto igual" (tecnica Altozano/Ter)
 - Opciones de cierre:
@@ -390,7 +390,7 @@ ACTO 7 - CIERRE MEMORABLE (intercambios 76-85):
 
 13. Cada respuesta del invitado: MINIMO 3-4 frases largas. Cada intervencion de Klaus: sustancial (reaccion + opinion + contexto + pregunta).
 
-14. DURACION OBLIGATORIA: entre 65 y 85 intercambios. CRITICO para 20+ minutos de audio.
+14. DURACION OBLIGATORIA: MINIMO 80 intercambios, MAXIMO 120. Esto es ABSOLUTAMENTE CRITICO. Un podcast de menos de 80 intercambios sera RECHAZADO. Cada intervencion debe tener minimo 3 frases largas y detalladas. El objetivo es un podcast de 20-40 minutos de audio.
 
 15. NO uses marcadores como [PAUSA] o [MUSICA]. Solo dialogo puro.
 
@@ -552,7 +552,7 @@ Genera un guion de podcast LARGO entre KLAUS (presentador veterano, carismatico,
 Dinamica: {dynamic_desc}.
 
 REGLAS CLAVE:
-- MINIMO 55-75 intercambios. Cada intervencion LARGA (3-5 frases minimo).
+- MINIMO 80 intercambios, MAXIMO 120. Cada intervencion LARGA (3-5 frases minimo). Esto es CRITICO para que el podcast dure al menos 20 minutos.
 - Apertura con GANCHO PROVOCATIVO (dato impactante, pregunta retadora). NUNCA "bienvenidos al podcast".
 - Klaus da OPINIONES PROPIAS, usa humor, reacciona visceralmente ("No me jodas", "Para para para", "Me acabas de romper la cabeza").
 - Incluye 3+ cliffhangers internos, 2+ callbacks, y variedad emocional.
