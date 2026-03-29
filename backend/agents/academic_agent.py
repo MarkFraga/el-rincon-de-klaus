@@ -53,11 +53,11 @@ class AcademicAgent(BaseAgent):
                 await asyncio.sleep(_RETRY_DELAY)
         return []
 
-    async def run(self, topic: str) -> dict:
+    async def run(self, topic: str, smart_queries: list[str] | None = None) -> dict:
         await self.report("Buscando papers academicos en multiples fuentes...", progress=5)
 
-        # Generate multiple query variations for broader coverage
-        query_variations = self._build_query_variations(topic)
+        # Use smart queries if provided, otherwise fall back to basic variations
+        query_variations = smart_queries if smart_queries else self._build_query_variations(topic)
         papers: list[dict[str, Any]] = []
         arxiv_total = 0
         ss_total = 0

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -13,18 +15,26 @@ logger = logging.getLogger(__name__)
 
 _FETCH_TIMEOUT = 12
 _MAX_CONTENT_CHARS = 3000
+_MAX_FORUM_CHARS = 5000
+
+
+def _is_reddit_url(url: str) -> bool:
+    try:
+        return "reddit.com" in urlparse(url).netloc.lower()
+    except Exception:
+        return False
 
 
 class DeepResearchAgent(BaseAgent):
-    """Agent 4 -- deep/obscure research. Goes to corners of the internet others miss."""
+    """Agent 4 -- deep/obscure research with forum awareness."""
 
     def __init__(self, job_id: str):
         super().__init__(name="deep_research", job_id=job_id)
 
-    async def run(self, topic: str) -> dict:
+    async def run(self, topic: str, smart_queries: list[str] | None = None) -> dict:
         await self.report("Iniciando busqueda profunda...", progress=5)
 
-        queries = self._build_queries(topic)
+        queries = smart_queries if smart_queries else self._build_queries(topic)
         raw_results: list[dict[str, Any]] = []
 
         # Initialize DuckDuckGo with retry
@@ -98,6 +108,7 @@ class DeepResearchAgent(BaseAgent):
 
     @staticmethod
     def _build_queries(topic: str) -> list[str]:
+        """Fallback queries when no smart queries are provided."""
         return [
             f'"{topic}" site:researchgate.net',
             f'"{topic}" site:academia.edu',
@@ -149,6 +160,10 @@ class DeepResearchAgent(BaseAgent):
         if not url:
             return {}
 
+        # Use Reddit JSON API for Reddit URLs
+        if _is_reddit_url(url):
+            return await self._extract_reddit(url, title)
+
         try:
             async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, follow_redirects=True) as client:
                 resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -171,4 +186,56 @@ class DeepResearchAgent(BaseAgent):
             }
         except Exception as exc:
             logger.debug("Deep extraction failed for %s: %s", url, exc)
+            return {}
+
+    async def _extract_reddit(self, url: str, title: str) -> dict[str, str]:
+        """Extract Reddit post + top comments via JSON API."""
+        try:
+            json_url = re.sub(r'/?(\?.*)?$', '.json', url.split('?')[0])
+            if not json_url.endswith('.json'):
+                json_url += '.json'
+
+            async with httpx.AsyncClient(timeout=_FETCH_TIMEOUT, follow_redirects=True) as client:
+                resp = await client.get(
+                    json_url,
+                    headers={"User-Agent": "Mozilla/5.0 (podcast-research-bot)"},
+                )
+                if resp.status_code != 200:
+                    return {}
+                data = resp.json()
+
+            if not isinstance(data, list) or len(data) < 2:
+                return {}
+
+            post_data = data[0].get("data", {}).get("children", [{}])[0].get("data", {})
+            post_title = post_data.get("title", title)
+            post_body = post_data.get("selftext", "")
+            subreddit = post_data.get("subreddit", "")
+            score = post_data.get("score", 0)
+
+            parts = [f"[Reddit r/{subreddit} | Score: {score}]", post_title]
+            if post_body:
+                parts.append(post_body[:1500])
+
+            comments_data = data[1].get("data", {}).get("children", [])
+            comment_texts = []
+            for c in comments_data[:15]:
+                cd = c.get("data", {})
+                body = cd.get("body", "")
+                cscore = cd.get("score", 0)
+                if body and cscore > 1 and body not in ("[deleted]", "[removed]"):
+                    comment_texts.append(f"[+{cscore}] {body[:500]}")
+
+            if comment_texts:
+                parts.append("\n--- MEJORES COMENTARIOS ---")
+                parts.extend(comment_texts)
+
+            content = "\n\n".join(parts)
+            return {
+                "title": f"[Reddit] {post_title}",
+                "url": url,
+                "content": content[:_MAX_FORUM_CHARS],
+            }
+        except Exception as exc:
+            logger.debug("Reddit extraction failed for %s: %s", url, exc)
             return {}

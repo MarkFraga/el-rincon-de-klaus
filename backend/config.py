@@ -15,14 +15,19 @@ BASE_DIR = Path(__file__).parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
+# TTS backend: "edge" (default), "kokoro", or "elevenlabs"
+TTS_BACKEND = os.getenv("TTS_BACKEND", "edge")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+
 # Emotion-to-prosody mapping for TTS
+# Rates boosted for dynamic, natural-sounding conversation (not slow lecture)
 EMOTION_PROSODY = {
-    "neutral":     {"rate": "+0%",  "pitch": "+0Hz"},
-    "excited":     {"rate": "+12%", "pitch": "+2Hz"},
-    "thoughtful":  {"rate": "-8%",  "pitch": "-1Hz"},
-    "challenging": {"rate": "+5%",  "pitch": "+1Hz"},
-    "humorous":    {"rate": "+8%",  "pitch": "+1Hz"},
-    "nostalgic":   {"rate": "-5%",  "pitch": "-1Hz"},
-    "surprised":   {"rate": "+15%", "pitch": "+3Hz"},
-    "skeptical":   {"rate": "-3%",  "pitch": "+1Hz"},
+    "neutral":     {"rate": "+5%",  "pitch": "+0Hz"},
+    "excited":     {"rate": "+18%", "pitch": "+2Hz"},
+    "thoughtful":  {"rate": "-3%",  "pitch": "-1Hz"},
+    "challenging": {"rate": "+10%", "pitch": "+1Hz"},
+    "humorous":    {"rate": "+14%", "pitch": "+1Hz"},
+    "nostalgic":   {"rate": "+0%",  "pitch": "-1Hz"},
+    "surprised":   {"rate": "+20%", "pitch": "+3Hz"},
+    "skeptical":   {"rate": "+3%",  "pitch": "+1Hz"},
 }

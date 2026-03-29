@@ -9,3 +9,5 @@ services:
         sync: false
       - key: PYTHON_VERSION
         value: "3.10.8"
+      - key: TTS_BACKEND
+        value: "kokoro"
