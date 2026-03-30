@@ -62,7 +62,7 @@ class AudioPipeline:
                 guest_pp = guest_voice_recipe.post_process
                 guest_speed_mult = guest_voice_recipe.speed_multiplier
             else:
-                guest_voice = "em_alex"
+                guest_voice = "am_michael"
                 guest_pp = expert_post_process
                 guest_speed_mult = 1.07
         else:

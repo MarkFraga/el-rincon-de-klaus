@@ -23,16 +23,14 @@ logger = logging.getLogger(__name__)
 # Grouped by perceived gender/character for intelligent mixing
 MALE_VOICES = [
     "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam",
-    "am_michael", "am_onyx", "am_puck",
+    "am_michael", "am_onyx", "am_puck", "am_santa",
     "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
-    "em_alex",
 ]
 
 FEMALE_VOICES = [
     "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica",
     "af_kore", "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
     "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
-    "ef_dora",
 ]
 
 # Deep/authoritative male voices (good base for Klaus)
@@ -45,7 +43,7 @@ BRIGHT_VOICES = ["af_heart", "af_bella", "am_puck", "af_nova", "bf_emma"]
 @dataclass
 class VoiceRecipe:
     """A unique voice created by mixing base voices + post-processing."""
-    voice_a: str = "em_alex"
+    voice_a: str = "am_adam"
     voice_b: str = "am_adam"
     blend_ratio: float = 0.5  # 0.0 = all voice_a, 1.0 = all voice_b
     post_process: dict = field(default_factory=dict)
@@ -57,9 +55,9 @@ class VoiceRecipe:
 
 # Klaus's fixed, unique voice recipe
 KLAUS_VOICE_RECIPE = VoiceRecipe(
-    voice_a="am_onyx",      # Deep, authoritative American male
-    voice_b="em_alex",      # Spanish male (for accent blending)
-    blend_ratio=0.35,       # 65% onyx + 35% alex
+    voice_a="am_onyx",      # Deep, authoritative male
+    voice_b="am_michael",   # Second deep male (for richer timbre blend)
+    blend_ratio=0.35,       # 65% onyx + 35% michael
     post_process={
         "pitch_shift_semitones": -3,
         "rasp_amount": 0.18,

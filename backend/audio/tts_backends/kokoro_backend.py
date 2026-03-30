@@ -96,7 +96,7 @@ class KokoroTTSBackend(TTSBackend):
         """Synthesize speech. `voice` can be:
 
         - A single voice name: "am_onyx"
-        - A mix spec: "am_onyx:0.65+em_alex:0.35"
+        - A mix spec: "am_onyx:0.65+am_michael:0.35"
         """
         kokoro, g2p = await _get_kokoro()
         speed = _parse_rate(rate)
@@ -110,7 +110,7 @@ class KokoroTTSBackend(TTSBackend):
             try:
                 voice_style = _get_voice_style(kokoro, voice)
             except Exception:
-                voice_style = _get_voice_style(kokoro, "em_alex")
+                voice_style = _get_voice_style(kokoro, "am_michael")
 
         def _generate():
             import soundfile as sf
@@ -132,10 +132,10 @@ class KokoroTTSBackend(TTSBackend):
 
     @staticmethod
     def _parse_mix_spec(kokoro_inst, spec: str) -> np.ndarray:
-        """Parse 'am_onyx:0.65+em_alex:0.35' into a blended style."""
+        """Parse 'am_onyx:0.65+am_michael:0.35' into a blended style."""
         parts = spec.split("+")
         if len(parts) != 2:
-            return _get_voice_style(kokoro_inst, "em_alex")
+            return _get_voice_style(kokoro_inst, "am_michael")
 
         name_a, ratio_a = parts[0].rsplit(":", 1)
         name_b, ratio_b = parts[1].rsplit(":", 1)
