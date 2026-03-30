@@ -12,4 +12,4 @@ pydantic>=2.0.0
 websockets>=13.0
 kokoro-onnx>=0.5.0
 soundfile>=0.12.0
-misaki-fork
+misaki-fork[en]
