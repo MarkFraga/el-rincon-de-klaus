@@ -1,13 +1,11 @@
 services:
   - type: web
     name: el-rincon-de-klaus
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn backend.app:app --host 0.0.0.0 --port $PORT
+    runtime: docker
     envVars:
       - key: GEMINI_API_KEY
         sync: false
-      - key: PYTHON_VERSION
-        value: "3.10.8"
       - key: TTS_BACKEND
         value: "kokoro"
+      - key: KOKORO_API_URL
+        sync: false

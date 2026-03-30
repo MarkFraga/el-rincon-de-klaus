@@ -18,6 +18,7 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # TTS backend: "edge" (default), "kokoro", or "elevenlabs"
 TTS_BACKEND = os.getenv("TTS_BACKEND", "edge")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+KOKORO_API_URL = os.getenv("KOKORO_API_URL", "")
 
 # Emotion-to-prosody mapping for TTS
 EMOTION_PROSODY = {
