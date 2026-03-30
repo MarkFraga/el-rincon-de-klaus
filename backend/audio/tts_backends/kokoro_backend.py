@@ -1,8 +1,8 @@
-"""Kokoro TTS backend with voice mixing for unique voices.
+"""Kokoro TTS backend using ONNX runtime (no PyTorch required).
 
-Uses Kokoro's voice embedding system to blend 2 base voices into
-unique combinations. Each character gets a distinct voice that
-doesn't repeat across guests.
+Uses kokoro-onnx for lightweight TTS with voice blending.
+Memory footprint ~200MB vs ~1GB+ with PyTorch.
+Model files are pre-downloaded in the Docker image.
 """
 
 from __future__ import annotations
@@ -10,65 +10,67 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Optional
 
-import torch
-from huggingface_hub import hf_hub_download
+import numpy as np
 
 from backend.audio.tts_backends.base import TTSBackend
 
 logger = logging.getLogger(__name__)
 
-_REPO_ID = "hexgrad/Kokoro-82M"
+# Model files location (downloaded during Docker build)
+_MODEL_DIR = Path(__file__).parent.parent.parent.parent / "models"
+_MODEL_PATH = _MODEL_DIR / "kokoro-v1.0.int8.onnx"
+_VOICES_PATH = _MODEL_DIR / "voices-v1.0.bin"
 
-# Lazy-loaded pipeline and voice cache
-_pipeline = None
+# Lazy-loaded instances
+_kokoro = None
+_g2p = None
 _load_lock = asyncio.Lock()
-_voice_cache: dict[str, torch.Tensor] = {}
+_voice_cache: dict[str, np.ndarray] = {}
 
 
-async def _get_pipeline():
-    """Lazy-load the Kokoro pipeline."""
-    global _pipeline
+async def _get_kokoro():
+    """Lazy-load the Kokoro ONNX model and Spanish G2P."""
+    global _kokoro, _g2p
     async with _load_lock:
-        if _pipeline is not None:
-            return _pipeline
+        if _kokoro is not None:
+            return _kokoro, _g2p
+
+        from kokoro_onnx import Kokoro
+
+        logger.info("Loading Kokoro ONNX model from %s ...", _MODEL_PATH)
+        _kokoro = Kokoro(str(_MODEL_PATH), str(_VOICES_PATH))
+        logger.info("Kokoro ONNX model loaded.")
+
         try:
-            from kokoro import KPipeline
-            logger.info("Loading Kokoro TTS model...")
-            _pipeline = KPipeline(lang_code="es", repo_id=_REPO_ID)
-            logger.info("Kokoro TTS model loaded.")
-            return _pipeline
-        except ImportError:
-            raise ImportError("kokoro not installed. pip install kokoro>=0.9 soundfile")
+            from misaki.espeak import EspeakG2P
+
+            _g2p = EspeakG2P(language="es")
+            logger.info("Spanish G2P (espeak-ng) loaded.")
+        except Exception as exc:
+            logger.warning("Spanish G2P unavailable (%s), will try direct mode", exc)
+            _g2p = None
+
+        return _kokoro, _g2p
 
 
-def _load_voice(voice_name: str) -> torch.Tensor:
-    """Load a voice embedding tensor, with caching."""
+def _get_voice_style(kokoro_inst, voice_name: str) -> np.ndarray:
+    """Load a voice style array, with caching."""
     if voice_name in _voice_cache:
         return _voice_cache[voice_name]
-
-    path = hf_hub_download(_REPO_ID, f"voices/{voice_name}.pt")
-    tensor = torch.load(path, weights_only=True)
-    _voice_cache[voice_name] = tensor
-    logger.debug("Loaded voice: %s (%s)", voice_name, tensor.shape)
-    return tensor
+    style = kokoro_inst.get_voice_style(voice_name)
+    _voice_cache[voice_name] = style
+    logger.debug("Loaded voice style: %s", voice_name)
+    return style
 
 
-def create_mixed_voice(voice_a: str, voice_b: str, blend_ratio: float = 0.5) -> torch.Tensor:
-    """Create a new voice by blending two base voice embeddings.
-
-    Args:
-        voice_a: First voice name (e.g., "am_onyx")
-        voice_b: Second voice name (e.g., "em_alex")
-        blend_ratio: 0.0 = all voice_a, 1.0 = all voice_b
-
-    Returns:
-        Blended voice tensor ready for Kokoro pipeline.
-    """
-    t_a = _load_voice(voice_a)
-    t_b = _load_voice(voice_b)
-    return t_a * (1 - blend_ratio) + t_b * blend_ratio
+def create_mixed_voice(
+    kokoro_inst, voice_a: str, voice_b: str, blend_ratio: float
+) -> np.ndarray:
+    """Blend two voice embeddings using numpy."""
+    s_a = _get_voice_style(kokoro_inst, voice_a)
+    s_b = _get_voice_style(kokoro_inst, voice_b)
+    return np.add(s_a * (1 - blend_ratio), s_b * blend_ratio)
 
 
 def _parse_rate(rate_str: str) -> float:
@@ -81,7 +83,7 @@ def _parse_rate(rate_str: str) -> float:
 
 
 class KokoroTTSBackend(TTSBackend):
-    """Kokoro TTS with voice mixing. 82M params, CPU-friendly."""
+    """Kokoro TTS via ONNX runtime with voice mixing. CPU-friendly, ~200MB RAM."""
 
     async def synthesize(
         self,
@@ -95,80 +97,45 @@ class KokoroTTSBackend(TTSBackend):
 
         - A single voice name: "am_onyx"
         - A mix spec: "am_onyx:0.65+em_alex:0.35"
-        - A pre-built torch.Tensor (via synthesize_with_recipe)
         """
-        pipeline = await _get_pipeline()
+        kokoro, g2p = await _get_kokoro()
         speed = _parse_rate(rate)
 
         # Parse voice specification
-        if isinstance(voice, torch.Tensor):
-            voice_tensor = voice
+        if isinstance(voice, np.ndarray):
+            voice_style = voice
         elif "+" in voice and ":" in voice:
-            # Mix spec: "am_onyx:0.65+em_alex:0.35"
-            voice_tensor = self._parse_mix_spec(voice)
+            voice_style = self._parse_mix_spec(kokoro, voice)
         else:
-            # Single voice name -- try loading it
             try:
-                voice_tensor = _load_voice(voice)
+                voice_style = _get_voice_style(kokoro, voice)
             except Exception:
-                # If voice name is an edge-tts ID, use default Spanish male
-                voice_tensor = _load_voice("em_alex")
+                voice_style = _get_voice_style(kokoro, "em_alex")
 
         def _generate():
             import soundfile as sf
-            import numpy as np
 
-            audio_chunks = []
-            for _, _, chunk in pipeline(text, voice=voice_tensor, speed=speed):
-                if chunk is not None:
-                    audio_chunks.append(chunk)
+            if g2p:
+                phonemes, _ = g2p(text)
+                samples, sample_rate = kokoro.create(
+                    phonemes, voice=voice_style, speed=speed, is_phonemes=True
+                )
+            else:
+                samples, sample_rate = kokoro.create(
+                    text, voice=voice_style, speed=speed, lang="es"
+                )
 
-            if not audio_chunks:
-                raise ValueError(f"Kokoro produced no audio for: {text[:50]}...")
-
-            full_audio = np.concatenate(audio_chunks)
-            sf.write(str(output_path), full_audio, 24000)
-
-        await asyncio.to_thread(_generate)
-        return output_path
-
-    async def synthesize_with_recipe(
-        self,
-        text: str,
-        voice_a: str,
-        voice_b: str,
-        blend_ratio: float,
-        output_path: Path,
-        speed: float = 1.0,
-    ) -> Path:
-        """Synthesize with a voice recipe (mixed voice)."""
-        pipeline = await _get_pipeline()
-        voice_tensor = create_mixed_voice(voice_a, voice_b, blend_ratio)
-
-        def _generate():
-            import soundfile as sf
-            import numpy as np
-
-            audio_chunks = []
-            for _, _, chunk in pipeline(text, voice=voice_tensor, speed=speed):
-                if chunk is not None:
-                    audio_chunks.append(chunk)
-
-            if not audio_chunks:
-                raise ValueError(f"Kokoro produced no audio for: {text[:50]}...")
-
-            full_audio = np.concatenate(audio_chunks)
-            sf.write(str(output_path), full_audio, 24000)
+            sf.write(str(output_path), samples, sample_rate)
 
         await asyncio.to_thread(_generate)
         return output_path
 
     @staticmethod
-    def _parse_mix_spec(spec: str) -> torch.Tensor:
-        """Parse 'am_onyx:0.65+em_alex:0.35' into a mixed tensor."""
+    def _parse_mix_spec(kokoro_inst, spec: str) -> np.ndarray:
+        """Parse 'am_onyx:0.65+em_alex:0.35' into a blended style."""
         parts = spec.split("+")
         if len(parts) != 2:
-            return _load_voice("em_alex")  # fallback
+            return _get_voice_style(kokoro_inst, "em_alex")
 
         name_a, ratio_a = parts[0].rsplit(":", 1)
         name_b, ratio_b = parts[1].rsplit(":", 1)
@@ -180,4 +147,6 @@ class KokoroTTSBackend(TTSBackend):
             r_a, r_b = 0.5, 0.5
 
         total = r_a + r_b
-        return create_mixed_voice(name_a.strip(), name_b.strip(), r_b / total)
+        return create_mixed_voice(
+            kokoro_inst, name_a.strip(), name_b.strip(), r_b / total
+        )

@@ -7,5 +7,3 @@ services:
         sync: false
       - key: TTS_BACKEND
         value: "kokoro"
-      - key: KOKORO_API_URL
-        sync: false

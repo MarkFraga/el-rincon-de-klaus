@@ -15,7 +15,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from backend.config import TTS_BACKEND, KOKORO_API_URL
+from backend.config import TTS_BACKEND
 
 logger = logging.getLogger(__name__)
 
@@ -32,18 +32,10 @@ def _get_backend():
     backend_name = TTS_BACKEND.lower().strip()
 
     if backend_name == "kokoro":
-        if KOKORO_API_URL:
-            try:
-                from backend.audio.tts_backends.kokoro_remote_backend import KokoroRemoteTTSBackend
-                _backend = KokoroRemoteTTSBackend(KOKORO_API_URL)
-                logger.info("Using Kokoro REMOTE TTS backend at %s", KOKORO_API_URL)
-                return _backend
-            except Exception as exc:
-                logger.warning("Kokoro remote unavailable (%s), trying local", exc)
         try:
             from backend.audio.tts_backends.kokoro_backend import KokoroTTSBackend
             _backend = KokoroTTSBackend()
-            logger.info("Using Kokoro LOCAL TTS backend")
+            logger.info("Using Kokoro TTS backend (ONNX)")
             return _backend
         except Exception as exc:
             logger.warning("Kokoro TTS unavailable (%s), falling back to edge-tts", exc)
